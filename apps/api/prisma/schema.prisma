@@ -1,0 +1,546 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum LifecycleStage {
+  IDEATION
+  VALIDATION
+  MVP
+  PILOT
+  SCALE
+  MONETIZATION
+}
+
+enum ProductHealth {
+  ON_TRACK
+  AT_RISK
+  BLOCKED
+  COMPLETED
+}
+
+enum ProductVisibility {
+  EVERYONE
+  TEAMS
+  ADMINS_ONLY
+}
+
+enum MilestoneStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum GateStatus {
+  DRAFT
+  SUBMITTED
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  PARKED
+  NEEDS_REVISION
+  CANCELLED
+}
+
+enum GateDecision {
+  APPROVED
+  REJECTED
+  PARKED
+  CHANGES_REQUESTED
+}
+
+enum IdeaStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  NEEDS_CLARIFICATION
+  ACCEPTED
+  REJECTED
+  CONVERTED
+  APPROVED
+  DELETED
+}
+
+enum ProductStatus {
+  ACTIVE
+  PARKED
+  REJECTED
+}
+
+enum ReviewCadence {
+  MONTHLY
+  QUARTERLY
+  HALF_YEARLY
+}
+
+enum ChallengeStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+enum ChallengeSubmissionStatus {
+  SUBMITTED
+  UNDER_REVIEW
+  SHORTLISTED
+  ACCEPTED
+  REJECTED
+}
+
+enum RoleCode {
+  ADMIN
+  EVALUATOR
+  PRODUCT_OWNER
+}
+
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  title        String?
+  avatarUrl    String?
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  roleId       String
+  role         Role      @relation(fields: [roleId], references: [id])
+  teams        UserTeam[]
+  teamsLed     Team[]    @relation("TeamLead")
+
+  productsOwned     Product[]  @relation("ProductOwner")
+  productsCreated   Product[]  @relation("ProductCreator")
+  productsStatusChanged Product[] @relation("ProductStatusChanger")
+  productEvaluations ProductEvaluator[]
+  productReviews    ProductReview[]
+  milestonesOwned   Milestone[] @relation("MilestoneOwner")
+  milestonesCompleted Milestone[] @relation("MilestoneCompleter")
+  stageHistory      StageHistory[] @relation("StageMover")
+  gateRequests      StageGateRequest[] @relation("GateSubmitter")
+  gateApprovers     StageGateApprover[] @relation("GateApproverUser")
+  gateDecisions     StageGateDecision[] @relation("GateDecisionUser")
+  ideasSubmitted    Idea[] @relation("IdeaSubmitter")
+  ideasAssigned     Idea[] @relation("IdeaEvaluator")
+  ideasApproved     Idea[] @relation("IdeaApprover")
+  ideasDeleted      Idea[] @relation("IdeaDeleter")
+  productUpdates    ProductUpdate[]
+  followers         ProductFollower[]
+  notifications     Notification[]
+  auditLogs         AuditLog[] @relation("AuditActor")
+  templatesCreated  StageTemplate[] @relation("TemplateCreator")
+  settingsUpdated   SystemSetting[] @relation("SettingUpdater")
+  challengeSubmissions ChallengeSubmission[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([roleId])
+  @@index([isActive])
+}
+
+model Role {
+  id          String           @id @default(cuid())
+  code        RoleCode         @unique
+  name        String
+  description String?
+  users       User[]
+  permissions RolePermission[]
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  code        String           @unique
+  description String
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model Team {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  description String?
+  leadId      String?
+  lead        User?    @relation("TeamLead", fields: [leadId], references: [id])
+  isArchived  Boolean   @default(false)
+  members     UserTeam[]
+  products    Product[]
+  productTeams ProductTeam[]
+  visibleProducts ProductVisibilityTeam[]
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([isArchived])
+}
+
+model UserTeam {
+  userId String
+  teamId String
+  isLead Boolean @default(false)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([userId, teamId])
+  @@index([teamId])
+}
+
+model Product {
+  id              String            @id @default(cuid())
+  name            String            @unique
+  slug            String            @unique
+  description     String
+  ownerId         String
+  owner           User              @relation("ProductOwner", fields: [ownerId], references: [id])
+  teamId          String?
+  team            Team?             @relation(fields: [teamId], references: [id])
+  stage           LifecycleStage    @default(IDEATION)
+  status          ProductStatus     @default(ACTIVE)
+  statusReason    String?
+  statusChangedById String?
+  statusChangedBy User?             @relation("ProductStatusChanger", fields: [statusChangedById], references: [id])
+  statusChangedAt DateTime?
+  reviewCadence   ReviewCadence?
+  nextReviewDate  DateTime?
+  lastReviewedAt  DateTime?
+  health          ProductHealth     @default(ON_TRACK)
+  visibility      ProductVisibility @default(EVERYONE)
+  businessArea    String?
+  targetUsers     String?
+  expectedImpact  String?
+  launchTarget    DateTime?
+  isArchived      Boolean           @default(false)
+  archivedAt      DateTime?
+  createdById     String?
+  createdBy       User?             @relation("ProductCreator", fields: [createdById], references: [id])
+  ideaId          String?           @unique
+  idea            Idea?             @relation(fields: [ideaId], references: [id])
+  milestones      Milestone[]
+  visibilityTeams ProductVisibilityTeam[]
+  teams           ProductTeam[]
+  evaluators      ProductEvaluator[]
+  reviews         ProductReview[]
+  stageHistory    StageHistory[]
+  gateRequests    StageGateRequest[]
+  updates         ProductUpdate[]
+  followers       ProductFollower[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@index([stage])
+  @@index([status])
+  @@index([health])
+  @@index([ownerId])
+  @@index([teamId])
+  @@index([isArchived])
+  @@index([updatedAt])
+}
+
+model ProductEvaluator {
+  productId String
+  userId    String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([productId, userId])
+  @@index([userId])
+}
+
+model ProductReview {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  reviewerId  String
+  reviewer    User     @relation(fields: [reviewerId], references: [id])
+  notes       String
+  metrics     Json?
+  createdAt   DateTime @default(now())
+
+  @@index([productId, createdAt])
+  @@index([reviewerId])
+}
+
+model ProductVisibilityTeam {
+  productId String
+  teamId    String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  team      Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([productId, teamId])
+  @@index([teamId])
+}
+
+model ProductTeam {
+  productId String
+  teamId    String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  team      Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@id([productId, teamId])
+  @@index([teamId])
+}
+
+model Milestone {
+  id            String          @id @default(cuid())
+  productId     String
+  product       Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  stage         LifecycleStage
+  title         String
+  description   String?
+  isRequired    Boolean         @default(true)
+  isStandard    Boolean         @default(false)
+  targetValue   Float?
+  actualValue   Float?
+  unit          String?
+  ownerId       String?
+  owner         User?           @relation("MilestoneOwner", fields: [ownerId], references: [id])
+  dueDate       DateTime?
+  status        MilestoneStatus @default(NOT_STARTED)
+  evidenceLink  String?
+  completedAt   DateTime?
+  completedById String?
+  completedBy   User?           @relation("MilestoneCompleter", fields: [completedById], references: [id])
+  sortOrder     Int             @default(0)
+  templateId    String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  @@index([productId, stage])
+  @@index([ownerId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+model StageHistory {
+  id        String          @id @default(cuid())
+  productId String
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fromStage LifecycleStage?
+  toStage   LifecycleStage
+  movedById String?
+  movedBy   User?           @relation("StageMover", fields: [movedById], references: [id])
+  reason    String?
+  metadata  Json?
+  createdAt DateTime        @default(now())
+
+  @@index([productId, createdAt])
+}
+
+model StageTemplate {
+  id               String         @id @default(cuid())
+  stage            LifecycleStage
+  title            String
+  description      String?
+  isRequired       Boolean        @default(true)
+  requiresEvidence Boolean        @default(false)
+  measurable       Boolean        @default(false)
+  unit             String?
+  sortOrder        Int            @default(0)
+  isActive         Boolean        @default(true)
+  createdById      String?
+  createdBy        User?          @relation("TemplateCreator", fields: [createdById], references: [id])
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([stage, sortOrder])
+}
+
+model StageGateRequest {
+  id              String         @id @default(cuid())
+  productId       String
+  product         Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fromStage       LifecycleStage
+  toStage         LifecycleStage
+  status          GateStatus     @default(DRAFT)
+  submittedById   String
+  submittedBy     User           @relation("GateSubmitter", fields: [submittedById], references: [id])
+  submittedAt     DateTime       @default(now())
+  policy          Json
+  note            String?
+  snapshot        Json?
+  resolutionNote  String?
+  round           Int            @default(1)
+  decidedAt       DateTime?
+  approvers       StageGateApprover[]
+  decisions       StageGateDecision[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([productId, status])
+  @@index([status])
+}
+
+model StageGateApprover {
+  id        String        @id @default(cuid())
+  requestId String
+  request   StageGateRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation("GateApproverUser", fields: [userId], references: [id])
+  decision  GateDecision?
+  comment   String?
+  decidedAt DateTime?
+
+  @@unique([requestId, userId])
+  @@index([userId])
+}
+
+model StageGateDecision {
+  id         String         @id @default(cuid())
+  requestId  String
+  request    StageGateRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  approverId String
+  approver   User           @relation("GateDecisionUser", fields: [approverId], references: [id])
+  decision   GateDecision
+  comment    String?
+  createdAt  DateTime       @default(now())
+
+  @@index([requestId])
+}
+
+model Idea {
+  id                 String     @id @default(cuid())
+  title              String
+  problem            String
+  solution           String
+  expectedImpact     String?
+  status             IdeaStatus @default(SUBMITTED)
+  submittedById      String?
+  submittedBy        User?      @relation("IdeaSubmitter", fields: [submittedById], references: [id])
+  submitterName      String?
+  submitterEmail     String?
+  submitterTitle     String?
+  assignedEvaluatorId String?
+  assignedEvaluator  User?      @relation("IdeaEvaluator", fields: [assignedEvaluatorId], references: [id])
+  approvedById       String?
+  approvedBy         User?      @relation("IdeaApprover", fields: [approvedById], references: [id])
+  approvedAt         DateTime?
+  deletedById        String?
+  deletedBy          User?      @relation("IdeaDeleter", fields: [deletedById], references: [id])
+  deletedAt          DateTime?
+  deleteReason       String?
+  reviewNote         String?
+  internalNotes      String?
+  clarificationNote  String?
+  convertedProduct   Product?
+  createdAt          DateTime   @default(now())
+  updatedAt          DateTime   @updatedAt
+
+  @@index([status])
+  @@index([submittedById])
+  @@index([createdAt])
+}
+
+model InnovationChallenge {
+  id                     String                @id @default(cuid())
+  title                  String
+  slug                   String                @unique
+  description            String
+  problemStatement       String
+  eligibility            String?
+  evaluationCriteria     String?
+  submissionRequirements String?
+  startDate              DateTime
+  deadline               DateTime
+  status                 ChallengeStatus       @default(DRAFT)
+  submissions            ChallengeSubmission[]
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
+
+  @@index([status])
+}
+
+model ChallengeSubmission {
+  id          String                    @id @default(cuid())
+  challengeId String
+  challenge   InnovationChallenge       @relation(fields: [challengeId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User                      @relation(fields: [userId], references: [id])
+  title       String
+  summary     String
+  status      ChallengeSubmissionStatus @default(SUBMITTED)
+  createdAt   DateTime                  @default(now())
+  updatedAt   DateTime                  @updatedAt
+
+  @@index([challengeId])
+  @@index([userId])
+}
+
+model ProductUpdate {
+  id          String   @id @default(cuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  title       String
+  body        String
+  isPublic    Boolean  @default(true)
+  createdById String
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([productId, createdAt])
+}
+
+model ProductFollower {
+  productId String
+  userId    String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@id([productId, userId])
+  @@index([userId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actor      User?    @relation("AuditActor", fields: [actorId], references: [id])
+  action     String
+  entityType String
+  entityId   String
+  summary    String?
+  before     Json?
+  after      Json?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@index([actorId])
+}
+
+model SystemSetting {
+  key         String   @id
+  value       Json
+  description String?
+  updatedById String?
+  updatedBy   User?    @relation("SettingUpdater", fields: [updatedById], references: [id])
+  updatedAt   DateTime @updatedAt
+}
