@@ -207,6 +207,8 @@ const SYSTEM_SETTINGS: {
     key: "approval.policy",
     value: {
       approverCount: 3,
+      earlyCount: 2,
+      lateCount: 3,
       mode: "UNANIMOUS",
       allowSelfApproval: false,
       rejectionRequiresReason: true,
@@ -862,6 +864,8 @@ async function seedDemo() {
     evidence?: string;
     completedDaysAgo?: number;
     ownerId?: string;
+    weight?: number;
+    statusReason?: string;
   };
 
   const milestoneSeeds: Record<string, { stage: LifecycleStage; items: MilestoneSeed[] }> = {
@@ -888,7 +892,9 @@ async function seedDemo() {
         {
           title: "Feedback report",
           required: true,
-          status: "IN_PROGRESS",
+          status: "PARKED",
+          statusReason: "Waiting on the pilot cohort to return the exit surveys.",
+          weight: 60,
           dueIn: 10,
           ownerId: user.owner4.id,
         },
@@ -896,6 +902,7 @@ async function seedDemo() {
           title: "Go/no-go review",
           required: true,
           status: "NOT_STARTED",
+          weight: 40,
           dueIn: 20,
           ownerId: user.owner.id,
         },
@@ -964,7 +971,9 @@ async function seedDemo() {
         {
           title: "Business case approved",
           required: true,
-          status: "IN_PROGRESS",
+          status: "BLOCKED",
+          statusReason: "Blocked by the open regulatory query on collateral tokenisation.",
+          weight: 70,
           dueIn: -2,
           ownerId: user.owner.id,
         },
@@ -972,6 +981,7 @@ async function seedDemo() {
           title: "Technical feasibility review",
           required: false,
           status: "IN_PROGRESS",
+          weight: 30,
           dueIn: 15,
           ownerId: user.approver.id,
         },
@@ -1172,6 +1182,8 @@ async function seedDemo() {
           )?.description,
           isRequired: item.required,
           status: item.status,
+          weight: item.weight ?? 100,
+          statusReason: item.statusReason ?? null,
           ownerId: item.ownerId,
           dueDate: daysFromNow(item.dueIn),
           evidenceLink: item.evidence,
@@ -1278,6 +1290,8 @@ async function seedDemo() {
 
   const policy = {
     approverCount: 3,
+    earlyCount: 2,
+    lateCount: 3,
     mode: "UNANIMOUS",
     allowSelfApproval: false,
   };

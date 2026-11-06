@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Check } from "lucide-react";
+import { ArrowRight, Check, CheckCheck, Pause, X } from "lucide-react";
 import type { ApprovalItem } from "@ims/shared";
 import { stageLabel } from "@ims/shared";
 import { formatDate } from "@/lib/format";
@@ -39,6 +39,15 @@ export function ApprovalList({
       {approvals.map((approval) => {
         const reviewers = approval.approvers.length;
         const isOwner = viewerId !== null && approval.product.owner.id === viewerId;
+        const myDecision =
+          viewerId !== null
+            ? approval.approvers.find((approver) => approver.user.id === viewerId)
+                ?.decision ?? null
+            : null;
+        const remaining = Math.max(
+          0,
+          approval.approvalsNeeded - approval.approvalsReceived,
+        );
 
         return (
           <li
@@ -81,6 +90,9 @@ export function ApprovalList({
               <span className="rounded-full bg-warning/10 px-2 py-0.5 uppercase tracking-wide text-[#9A6206]">
                 Awaiting decision
               </span>
+              <span className="rounded-full bg-primary-soft px-2 py-0.5 uppercase tracking-wide text-primary">
+                {approval.approvalsReceived}/{approval.approvalsNeeded} approved
+              </span>
               <span>
                 {reviewers} reviewer{reviewers === 1 ? "" : "s"} notified
               </span>
@@ -97,7 +109,14 @@ export function ApprovalList({
                 />
                 <span className="truncate">Owner: {approval.product.owner.name}</span>
               </div>
-              {canDecide && !isOwner ? (
+              {canDecide && !isOwner && myDecision ? (
+                <YourDecisionBadge
+                  decision={myDecision}
+                  remaining={remaining}
+                  received={approval.approvalsReceived}
+                  needed={approval.approvalsNeeded}
+                />
+              ) : canDecide && !isOwner ? (
                 <GateDecisionButton approval={approval} />
               ) : showReviewLink ? (
                 <Button asChild size="sm" variant="secondary" className="h-8 px-3 text-[11px]">
@@ -117,5 +136,47 @@ export function ApprovalList({
         );
       })}
     </ul>
+  );
+}
+
+function YourDecisionBadge({
+  decision,
+  remaining,
+  received,
+  needed,
+}: {
+  decision: NonNullable<ApprovalItem["approvers"][number]["decision"]>;
+  remaining: number;
+  received: number;
+  needed: number;
+}) {
+  if (decision === "REJECTED" || decision === "PARKED") {
+    const label = decision === "REJECTED" ? "rejected" : "parked";
+    const Icon = decision === "REJECTED" ? X : Pause;
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full bg-danger/10 px-2.5 py-1 text-[11px] font-semibold text-danger">
+        <Icon className="h-3.5 w-3.5" />
+        You {label} this gate
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-1 text-[11px] font-semibold text-success"
+      title={`Your approval is recorded (${received}/${needed} in total)`}
+    >
+      {remaining > 0 ? (
+        <>
+          <CheckCheck className="h-3.5 w-3.5" />
+          You approved — {remaining} more{remaining === 1 ? "" : "s"} needed
+        </>
+      ) : (
+        <>
+          <Check className="h-3.5 w-3.5" />
+          You approved
+        </>
+      )}
+    </span>
   );
 }

@@ -14,24 +14,47 @@ interface HealthMilestone {
   dueDate: Date | null;
 }
 
+interface ProgressMilestone extends HealthMilestone {
+  weight: number;
+}
+
+// A milestone is "done" for gate/progress purposes when it is COMPLETED, or
+// BLOCKED with a reason (a documented dead-end that no longer gates the stage).
+function isSatisfied(status: MilestoneStatus) {
+  return status === "COMPLETED" || status === "BLOCKED";
+}
+
 export function milestoneProgress(
-  milestones: { stage: LifecycleStage; isRequired: boolean; status: MilestoneStatus }[],
+  milestones: ProgressMilestone[],
   stage: LifecycleStage,
 ) {
   const current = milestones.filter((milestone) => milestone.stage === stage);
   const required = current.filter((milestone) => milestone.isRequired);
-  const completed = current.filter((milestone) => milestone.status === "COMPLETED");
+  const completed = current.filter(
+    (milestone) => milestone.status === "COMPLETED",
+  );
   const requiredCompleted = required.filter(
     (milestone) => milestone.status === "COMPLETED",
   );
+  const weightTotal = current.reduce(
+    (sum, milestone) => sum + (milestone.weight || 0),
+    0,
+  );
+  const weightDone = current
+    .filter((milestone) => isSatisfied(milestone.status))
+    .reduce((sum, milestone) => sum + (milestone.weight || 0), 0);
   return {
     completed: completed.length,
     total: current.length,
     requiredTotal: required.length,
     requiredCompleted: requiredCompleted.length,
-    percent: current.length
-      ? Math.round((completed.length / current.length) * 100)
-      : 0,
+    weightTotal,
+    weightDone,
+    percent: weightTotal
+      ? Math.round((weightDone / weightTotal) * 100)
+      : current.length
+        ? Math.round((completed.length / current.length) * 100)
+        : 0,
   };
 }
 
@@ -47,7 +70,7 @@ export function computeHealth(
   if (
     stage === "MONETIZATION" &&
     required.length > 0 &&
-    required.every((milestone) => milestone.status === "COMPLETED")
+    required.every((milestone) => isSatisfied(milestone.status))
   ) {
     return "COMPLETED";
   }
@@ -59,11 +82,16 @@ export function computeHealth(
     return "BLOCKED";
   }
 
-  const overdue = required.filter(
+  // Only actively-pending work (not started / in progress) can go overdue.
+  // Parked and blocked milestones are documented states and never counted here.
+  const pending = required.filter(
     (milestone) =>
-      milestone.status !== "COMPLETED" &&
-      milestone.dueDate !== null &&
-      milestone.dueDate.getTime() < now.getTime(),
+      milestone.status === "NOT_STARTED" || milestone.status === "IN_PROGRESS",
+  );
+
+  const overdue = pending.filter(
+    (milestone) =>
+      milestone.dueDate !== null && milestone.dueDate.getTime() < now.getTime(),
   );
 
   if (overdue.some((milestone) => now.getTime() - (milestone.dueDate?.getTime() ?? 0) > 7 * DAY)) {
@@ -72,9 +100,8 @@ export function computeHealth(
 
   if (overdue.length > 0) return "AT_RISK";
 
-  const dueSoon = required.filter(
+  const dueSoon = pending.filter(
     (milestone) =>
-      milestone.status !== "COMPLETED" &&
       milestone.dueDate !== null &&
       milestone.dueDate.getTime() >= now.getTime() &&
       milestone.dueDate.getTime() - now.getTime() <= 3 * DAY,

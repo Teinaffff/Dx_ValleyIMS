@@ -146,6 +146,16 @@ export class DashboardService {
       pipeline,
       products: productPage.items as ProductListItem[],
       approvals: approvals.map((request): ApprovalItem => {
+        const rawPolicy = (request.policy ?? {}) as Record<string, unknown>;
+        const approvalsNeeded = Math.max(
+          1,
+          Number.isFinite(Number(rawPolicy.approverCount))
+            ? Math.trunc(Number(rawPolicy.approverCount))
+            : 1,
+        );
+        const approvalsReceived = request.approvers.filter(
+          (approver) => approver.decision === "APPROVED",
+        ).length;
         return {
           id: request.id,
           status: request.status,
@@ -164,7 +174,9 @@ export class DashboardService {
             decidedAt: approver.decidedAt?.toISOString() ?? null,
             comment: approver.comment,
           })),
-          approvalPolicy: "Any evaluator decides",
+          approvalsNeeded,
+          approvalsReceived,
+          approvalPolicy: `${approvalsReceived}/${approvalsNeeded} evaluator approvals`,
         };
       }),
       activities,

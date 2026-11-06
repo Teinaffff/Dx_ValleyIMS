@@ -21,7 +21,7 @@ import { PrismaService } from "../../common/prisma.service";
 import { AuthUser } from "../../common/auth-user";
 import { AuditService } from "../audit/audit.service";
 import {
-  CompleteMilestoneDto,
+  SetMilestoneStatusDto,
   CreateMilestoneDto,
   CreateProductDto,
   ListMilestonesDto,
@@ -33,6 +33,11 @@ import {
 import { computeHealth, milestoneProgress } from "./product-health";
 
 const userRef = { select: { id: true, name: true, email: true, avatarUrl: true } };
+
+function clampWeight(weight: number | null | undefined): number {
+  if (weight === null || weight === undefined || Number.isNaN(weight)) return 100;
+  return Math.min(100, Math.max(1, Math.round(weight)));
+}
 
 const productListInclude = {
   owner: { select: { id: true, name: true, avatarUrl: true } },
@@ -226,6 +231,7 @@ export class ProductsService {
         title: milestone.title.trim(),
         description: milestone.description?.trim() || null,
         isRequired: milestone.isRequired ?? true,
+        weight: clampWeight(milestone.weight),
         sortOrder: index + 1,
         dueDate: milestone.dueDate ? new Date(milestone.dueDate) : null,
       }),
@@ -490,6 +496,7 @@ export class ProductsService {
         title: dto.title.trim(),
         description: dto.description?.trim() || null,
         isRequired: dto.isRequired ?? true,
+        weight: clampWeight(dto.weight),
         sortOrder: (last._max.sortOrder ?? 0) + 1,
         dueDate: dto.dueDate ? new Date(dto.dueDate) : null,
         ownerId: dto.ownerId ?? null,
@@ -511,6 +518,7 @@ export class ProductsService {
         title: milestone.title,
         stage: milestone.stage,
         isRequired: milestone.isRequired,
+        weight: milestone.weight,
       },
       metadata: { productId: product.id, productName: product.name },
     });
@@ -540,30 +548,57 @@ export class ProductsService {
     await this.assertMilestoneStage(id, product.stage, milestone.stage);
     if (dto.ownerId) await this.assertMilestoneOwner(dto.ownerId);
 
+    const frozen =
+      milestone.status === "COMPLETED" || milestone.status === "BLOCKED";
+    if (
+      frozen &&
+      (dto.title !== undefined ||
+        dto.weight !== undefined ||
+        dto.isRequired !== undefined)
+    ) {
+      throw new BadRequestException(
+        `A ${milestone.status.toLowerCase()} milestone is final — its title, weight and required flag can't be changed. Reopen it first if the product is still in this stage.`,
+      );
+    }
+
+    const data: Prisma.MilestoneUncheckedUpdateInput = {
+      title: dto.title?.trim(),
+      description:
+        dto.description === undefined
+          ? undefined
+          : dto.description?.trim() || null,
+      isRequired: dto.isRequired,
+      weight: dto.weight === undefined ? undefined : clampWeight(dto.weight),
+      dueDate:
+        dto.dueDate === undefined
+          ? undefined
+          : dto.dueDate
+            ? new Date(dto.dueDate)
+            : null,
+      ownerId: dto.ownerId === undefined ? undefined : dto.ownerId,
+      evidenceLink:
+        dto.evidenceLink === undefined
+          ? undefined
+          : dto.evidenceLink?.trim() || null,
+      targetValue: dto.targetValue === undefined ? undefined : dto.targetValue,
+      actualValue: dto.actualValue === undefined ? undefined : dto.actualValue,
+      unit: dto.unit === undefined ? undefined : dto.unit?.trim() || null,
+    };
+
+    // Recording a real actual value is objective evidence of work — auto-start it.
+    if (
+      milestone.status === "NOT_STARTED" &&
+      dto.actualValue !== undefined &&
+      dto.actualValue !== null &&
+      dto.actualValue > 0
+    ) {
+      data.status = "IN_PROGRESS";
+      data.startedAt = milestone.startedAt ?? new Date();
+    }
+
     const updated = await this.prisma.milestone.update({
       where: { id: milestone.id },
-      data: {
-        title: dto.title?.trim(),
-        description:
-          dto.description === undefined
-            ? undefined
-            : dto.description?.trim() || null,
-        isRequired: dto.isRequired,
-        dueDate:
-          dto.dueDate === undefined
-            ? undefined
-            : dto.dueDate
-              ? new Date(dto.dueDate)
-              : null,
-        ownerId: dto.ownerId === undefined ? undefined : dto.ownerId,
-        evidenceLink:
-          dto.evidenceLink === undefined
-            ? undefined
-            : dto.evidenceLink?.trim() || null,
-        targetValue: dto.targetValue === undefined ? undefined : dto.targetValue,
-        actualValue: dto.actualValue === undefined ? undefined : dto.actualValue,
-        unit: dto.unit === undefined ? undefined : dto.unit?.trim() || null,
-      },
+      data,
       include: milestoneInclude,
     });
 
@@ -577,6 +612,7 @@ export class ProductsService {
         title: milestone.title,
         description: milestone.description,
         isRequired: milestone.isRequired,
+        weight: milestone.weight,
         dueDate: milestone.dueDate?.toISOString() ?? null,
         evidenceLink: milestone.evidenceLink,
       },
@@ -584,6 +620,7 @@ export class ProductsService {
         title: updated.title,
         description: updated.description,
         isRequired: updated.isRequired,
+        weight: updated.weight,
         dueDate: updated.dueDate?.toISOString() ?? null,
         evidenceLink: updated.evidenceLink,
       },
@@ -593,10 +630,10 @@ export class ProductsService {
     return this.mapMilestone(updated);
   }
 
-  async completeMilestone(
+  async setMilestoneStatus(
     id: string,
     milestoneId: string,
-    dto: CompleteMilestoneDto,
+    dto: SetMilestoneStatusDto,
     user: AuthUser,
   ) {
     const product = await this.prisma.product.findUnique({
@@ -614,30 +651,72 @@ export class ProductsService {
 
     await this.assertMilestoneStage(id, product.stage, milestone.stage);
 
+    if (milestone.status === "COMPLETED" || milestone.status === "BLOCKED") {
+      throw new BadRequestException(
+        `This milestone is ${milestone.status.toLowerCase()} and is final — its status can't be changed.`,
+      );
+    }
+
+    const status = dto.status;
+    const reason = dto.reason?.trim();
+
+    let statusReason: string | null = null;
+    if (status === "PARKED" || status === "BLOCKED") {
+      if (!reason || reason.length < 2) {
+        throw new BadRequestException(
+          status === "PARKED"
+            ? "Add a short note about what this milestone is waiting on."
+            : "A reason is required to mark a milestone as blocked.",
+        );
+      }
+      statusReason = reason;
+    }
+
+    const data: Prisma.MilestoneUncheckedUpdateInput = { status, statusReason };
+
+    if (status === "COMPLETED") {
+      data.completedAt = new Date();
+      data.completedById = user.id;
+      if (dto.evidenceLink !== undefined) {
+        data.evidenceLink = dto.evidenceLink?.trim() || null;
+      }
+      if (dto.actualValue !== undefined) {
+        data.actualValue = dto.actualValue;
+      }
+    } else {
+      // Leaving the completed state clears any completion record.
+      data.completedAt = null;
+      data.completedById = null;
+    }
+
+    // Starting work stamps startedAt once; it stays as the "in progress since" marker.
+    if (status === "IN_PROGRESS" && !milestone.startedAt) {
+      data.startedAt = new Date();
+    }
+
     const updated = await this.prisma.milestone.update({
       where: { id: milestone.id },
-      data: {
-        status: "COMPLETED",
-        completedAt: new Date(),
-        completedById: user.id,
-        evidenceLink:
-          dto.evidenceLink === undefined
-            ? undefined
-            : dto.evidenceLink?.trim() || null,
-        actualValue:
-          dto.actualValue === undefined ? undefined : dto.actualValue,
-      },
+      data,
       include: milestoneInclude,
     });
 
+    const label =
+      status === "COMPLETED"
+        ? "completed"
+        : status === "PARKED"
+          ? "parked"
+          : status === "BLOCKED"
+            ? "blocked"
+            : "in progress";
+
     await this.audit.record({
       actorId: user.id,
-      action: "milestone.completed",
+      action: "milestone.status_changed",
       entityType: "Milestone",
       entityId: milestone.id,
-      summary: `Completed milestone ${milestone.title} on ${product.name}`,
-      before: { status: milestone.status },
-      after: { status: updated.status, completedById: user.id },
+      summary: `Marked milestone ${milestone.title} as ${label} on ${product.name}`,
+      before: { status: milestone.status, statusReason: milestone.statusReason },
+      after: { status: updated.status, statusReason: updated.statusReason },
       metadata: { productId: product.id, productName: product.name },
     });
 
@@ -660,12 +739,20 @@ export class ProductsService {
 
     await this.assertMilestoneStage(id, product.stage, milestone.stage);
 
+    if (milestone.status !== "PARKED") {
+      throw new BadRequestException(
+        "Only parked milestones can be reopened.",
+      );
+    }
+
     const updated = await this.prisma.milestone.update({
       where: { id: milestone.id },
       data: {
         status: "NOT_STARTED",
+        statusReason: null,
         completedAt: null,
         completedById: null,
+        startedAt: null,
       },
       include: milestoneInclude,
     });
@@ -676,8 +763,8 @@ export class ProductsService {
       entityType: "Milestone",
       entityId: milestone.id,
       summary: `Reopened milestone ${milestone.title} on ${product.name}`,
-      before: { status: milestone.status },
-      after: { status: updated.status },
+      before: { status: milestone.status, statusReason: milestone.statusReason },
+      after: { status: updated.status, statusReason: updated.statusReason },
       metadata: { productId: product.id, productName: product.name },
     });
 
@@ -971,7 +1058,10 @@ export class ProductsService {
       description: milestone.description,
       isRequired: milestone.isRequired,
       isStandard: milestone.isStandard,
+      weight: milestone.weight,
       status: milestone.status,
+      statusReason: milestone.statusReason,
+      startedAt: milestone.startedAt?.toISOString() ?? null,
       owner: milestone.owner,
       dueDate: milestone.dueDate?.toISOString() ?? null,
       evidenceLink: milestone.evidenceLink,

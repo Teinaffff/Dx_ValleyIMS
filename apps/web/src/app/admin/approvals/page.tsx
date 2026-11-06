@@ -25,7 +25,7 @@ export default async function ApprovalsPage() {
       <PageHeader
         eyebrow="Stage gates"
         title="Approvals that mean something."
-        description="Any authorised evaluator can approve, park or reject a pending gate. Approval advances the product exactly one stage; every decision is append-only and audited."
+        description="Evaluators with gate.decide approve, park or reject a pending gate. Your approval is recorded and the product advances only once the required number of evaluators have approved; a single rejection closes the gate. Every decision is append-only and audited."
         actions={
           <Button asChild variant="outline" size="md">
             <Link href="/admin/products">Review portfolio</Link>
@@ -75,9 +75,9 @@ export default async function ApprovalsPage() {
               {[
                 "The Product Owner completes every required milestone.",
                 "The API verifies readiness and freezes a snapshot of the stage.",
-                "Independent reviewers are notified.",
-                "Any evaluator with gate.decide can approve, park or reject.",
-                "Approval advances the product one stage; rejection keeps it in place.",
+                "A panel of independent evaluators is notified.",
+                "Each evaluator approves, parks or rejects once; your decision is recorded.",
+                "The product advances only when enough evaluators have approved. A single rejection closes the gate.",
                 "Every decision is written to the audit trail.",
               ].map((step, index) => (
                 <li key={step} className="flex gap-2.5">
@@ -95,17 +95,18 @@ export default async function ApprovalsPage() {
           </section>
 
           <section className="surface-card p-5">
-            <p className="label-caps mb-1.5">Default policy</p>
+            <p className="label-caps mb-1.5">Approval policy</p>
             <h3 className="font-display text-lg font-semibold tracking-tight">
-              Single evaluator decision
+              Evaluator quorum
             </h3>
             <p className="mt-2 text-[11px] leading-relaxed text-muted">
-              Any evaluator with gate.decide can decide a pending gate. Approvals advance
-              immediately, and rejections keep the product in its current stage.
+              Gates up to MVP need 2 evaluator approvals; gates from MVP onward need 3.
+              Your approval is recorded and the product advances once the required number
+              of independent evaluators have approved.
             </p>
             <div className="mt-4 flex items-center gap-2 rounded-2xl bg-soft px-3 py-2.5 text-[10px] font-medium text-muted">
               <BadgeCheck className="h-3.5 w-3.5 text-primary" />
-              Rejection requires a written reason by default.
+              A single rejection closes the gate; reasons are required.
             </div>
           </section>
         </div>

@@ -85,9 +85,8 @@ export default async function ProductDetailPage({
     (session?.permissions.includes(PERMISSIONS.MILESTONE_MANAGE) === true &&
       product.owner.id === session?.id);
   const canSubmitGate =
-    session?.role === "ADMIN" ||
-    (session?.permissions.includes(PERMISSIONS.GATE_SUBMIT) === true &&
-      product.owner.id === session?.id);
+    session?.permissions.includes(PERMISSIONS.GATE_SUBMIT) === true &&
+    product.owner.id === session?.id;
   const teamNames = product.teams.map((team) => team.name).join(", ");
 
   const currentMilestones = product.milestones.filter(

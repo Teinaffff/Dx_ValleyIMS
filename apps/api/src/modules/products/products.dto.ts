@@ -94,6 +94,13 @@ export class CreateProductMilestoneDto {
   isRequired?: boolean;
 
   @IsOptional()
+  @Transform(toNumberOrNull)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  weight?: number | null;
+
+  @IsOptional()
   @Transform(emptyToUndefined)
   @IsDateString()
   dueDate?: string;
@@ -244,6 +251,13 @@ export class CreateMilestoneDto {
   isRequired?: boolean;
 
   @IsOptional()
+  @Transform(toNumberOrNull)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  weight?: number | null;
+
+  @IsOptional()
   @Transform(emptyToUndefined)
   @IsDateString()
   dueDate?: string;
@@ -294,6 +308,13 @@ export class UpdateMilestoneDto {
   isRequired?: boolean;
 
   @IsOptional()
+  @Transform(toNumberOrNull)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  weight?: number | null;
+
+  @IsOptional()
   @Transform(emptyToNull)
   @IsDateString()
   dueDate?: string | null;
@@ -326,7 +347,16 @@ export class UpdateMilestoneDto {
   unit?: string | null;
 }
 
-export class CompleteMilestoneDto {
+export class SetMilestoneStatusDto {
+  @IsIn(["IN_PROGRESS", "COMPLETED", "PARKED", "BLOCKED"])
+  status!: "IN_PROGRESS" | "COMPLETED" | "PARKED" | "BLOCKED";
+
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+
   @IsOptional()
   @Transform(emptyToUndefined)
   @IsString()

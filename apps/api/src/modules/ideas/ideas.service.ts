@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -7,6 +8,8 @@ import { IdeaStatus, Prisma, RoleCode } from "@prisma/client";
 import type { AuthUser } from "../../common/auth-user";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../audit/audit.service";
+import { ProductsService } from "../products/products.service";
+import type { CreateProductDto } from "../products/products.dto";
 import {
   CreatePublicIdeaDto,
   DeleteIdeaDto,
@@ -32,6 +35,7 @@ const ideaInclude = {
   },
   approvedBy: { select: { id: true, name: true } },
   deletedBy: { select: { id: true, name: true } },
+  convertedProduct: { select: { id: true, name: true } },
 } satisfies Prisma.IdeaInclude;
 
 type IdeaWithPeople = Prisma.IdeaGetPayload<{ include: typeof ideaInclude }>;
@@ -55,6 +59,7 @@ function toInboxItem(idea: IdeaWithPeople) {
     reviewNote: idea.reviewNote,
     deleteReason: idea.deleteReason,
     reviewedBy: reviewer ? { id: reviewer.id, name: reviewer.name } : null,
+    convertedProductId: idea.convertedProduct?.id ?? null,
     approvedAt: idea.approvedAt?.toISOString() ?? null,
     deletedAt: idea.deletedAt?.toISOString() ?? null,
     createdAt: idea.createdAt.toISOString(),
@@ -66,6 +71,7 @@ export class IdeasService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly products: ProductsService,
   ) {}
 
   async submitPublic(dto: CreatePublicIdeaDto) {
@@ -329,5 +335,62 @@ export class IdeasService {
     });
 
     return { id: updated.id, status: updated.status };
+  }
+
+  async convert(id: string, dto: CreateProductDto, actor: AuthUser) {
+    const idea = await this.prisma.idea.findUnique({
+      where: { id },
+      include: { convertedProduct: { select: { id: true } } },
+    });
+    if (!idea) throw new NotFoundException("Idea not found.");
+    if (idea.status === "DELETED") {
+      throw new BadRequestException("Restore this idea before converting it.");
+    }
+    if (idea.convertedProduct || idea.status === "CONVERTED") {
+      throw new ConflictException("This idea has already been turned into a product.");
+    }
+    if (idea.status !== "APPROVED" && idea.status !== "ACCEPTED") {
+      throw new BadRequestException(
+        "Only approved ideas can be turned into a product.",
+      );
+    }
+
+    const product = await this.products.create(dto, actor);
+
+    await this.prisma.$transaction([
+      this.prisma.product.update({
+        where: { id: product.id },
+        data: { ideaId: id },
+      }),
+      this.prisma.idea.update({
+        where: { id },
+        data: { status: "CONVERTED" },
+      }),
+    ]);
+
+    await this.audit.record({
+      actorId: actor.id,
+      action: "idea.converted",
+      entityType: "Idea",
+      entityId: id,
+      summary: `${actor.name} turned idea "${idea.title}" into ${product.name}`,
+      before: { status: idea.status },
+      after: { status: "CONVERTED", productId: product.id },
+      metadata: { productId: product.id, productName: product.name },
+    });
+
+    if (idea.submittedById && idea.submittedById !== actor.id) {
+      await this.prisma.notification.create({
+        data: {
+          userId: idea.submittedById,
+          type: "idea.converted",
+          title: `Your idea became a product: ${product.name}`,
+          body: `${actor.name} turned "${idea.title}" into a product owned by ${product.owner.name}.`,
+          link: `/admin/products/${product.id}`,
+        },
+      });
+    }
+
+    return product;
   }
 }

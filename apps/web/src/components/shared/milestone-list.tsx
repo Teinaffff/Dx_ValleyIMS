@@ -1,11 +1,11 @@
-import { Check, Circle, Clock, ExternalLink, Minus } from "lucide-react";
+import { Ban, Check, Circle, Clock, ExternalLink, Minus, Pause, Play } from "lucide-react";
 import type { LifecycleStage, MilestoneDto, UserRef } from "@ims/shared";
 import { LIFECYCLE_STAGES, stageLabel } from "@ims/shared";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 import { UserAvatar } from "@/components/ui/avatar";
 import { Progress } from "@/components/ui/progress";
-import { MilestoneToggle } from "./milestone-toggle";
+import { MilestoneStatusControl } from "./milestone-toggle";
 import {
   AddMilestoneButton,
   DeleteMilestoneButton,
@@ -14,7 +14,7 @@ import {
 
 export function isOverdue(milestone: MilestoneDto) {
   return (
-    milestone.status !== "COMPLETED" &&
+    (milestone.status === "NOT_STARTED" || milestone.status === "IN_PROGRESS") &&
     Boolean(milestone.dueDate) &&
     new Date(milestone.dueDate!).getTime() < Date.now()
   );
@@ -25,6 +25,20 @@ function StatusIcon({ milestone }: { milestone: MilestoneDto }) {
     return (
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-success text-white">
         <Check className="h-3.5 w-3.5" strokeWidth={3} />
+      </span>
+    );
+  }
+  if (milestone.status === "BLOCKED") {
+    return (
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-danger text-white">
+        <Ban className="h-3.5 w-3.5" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (milestone.status === "PARKED") {
+    return (
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-warning text-white">
+        <Pause className="h-3.5 w-3.5" strokeWidth={2.5} />
       </span>
     );
   }
@@ -71,16 +85,36 @@ export function MilestoneRow({
             )}
           >
             {milestone.title}
+            {milestone.isRequired ? (
+              <span
+                className="ml-1 align-top text-[13px] font-bold text-[#9A6206]"
+                title="Required milestone"
+                aria-label="Required milestone"
+              >
+                *
+              </span>
+            ) : null}
           </p>
-          {milestone.isRequired ? (
-            <span className="rounded-full bg-warning/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#9A6206]">
-              Required
+          {milestone.status === "NOT_STARTED" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-ink/[0.05] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted">
+              <Circle className="h-2.5 w-2.5" /> Not started
             </span>
-          ) : (
-            <span className="rounded-full bg-ink/[0.05] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted">
-              Optional
+          ) : null}
+          {milestone.status === "IN_PROGRESS" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-primary-soft px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary">
+              <Play className="h-2.5 w-2.5" /> In progress
             </span>
-          )}
+          ) : null}
+          {milestone.status === "PARKED" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#9A6206]">
+              <Pause className="h-2.5 w-2.5" /> Parked
+            </span>
+          ) : null}
+          {milestone.status === "BLOCKED" ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-danger/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-danger">
+              <Ban className="h-2.5 w-2.5" /> Blocked
+            </span>
+          ) : null}
           {overdue ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-danger/10 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-danger">
               <Clock className="h-2.5 w-2.5" /> Overdue
@@ -90,6 +124,12 @@ export function MilestoneRow({
         {milestone.description ? (
           <p className="mt-1 text-[11px] leading-relaxed text-muted">
             {milestone.description}
+          </p>
+        ) : null}
+        {milestone.statusReason ? (
+          <p className="mt-1 text-[11px] italic leading-relaxed text-muted">
+            {milestone.status === "BLOCKED" ? "Blocked — " : "Waiting on — "}
+            {milestone.statusReason}
           </p>
         ) : null}
         <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[10px] text-muted">
@@ -110,6 +150,9 @@ export function MilestoneRow({
           <span className={overdue ? "font-semibold text-danger" : undefined}>
             Due {formatDate(milestone.dueDate)}
           </span>
+          {milestone.weight !== 100 ? (
+            <span>Weight {milestone.weight}%</span>
+          ) : null}
           {hasTarget ? (
             <span>
               Target {milestone.targetValue}
@@ -122,6 +165,9 @@ export function MilestoneRow({
               {milestone.unit ? ` ${milestone.unit}` : ""}
             </span>
           ) : null}
+          {milestone.status === "IN_PROGRESS" && milestone.startedAt ? (
+            <span>In progress since {formatDate(milestone.startedAt)}</span>
+          ) : null}
           {milestone.completedAt ? (
             <span>Completed {formatDate(milestone.completedAt)}</span>
           ) : null}
@@ -130,7 +176,7 @@ export function MilestoneRow({
       <div className="flex shrink-0 flex-col items-end gap-1.5 self-start">
         {canManage && productId ? (
           <div className="flex items-center gap-1">
-            <MilestoneToggle productId={productId} milestone={milestone} />
+            <MilestoneStatusControl productId={productId} milestone={milestone} />
             <EditMilestoneButton
               productId={productId}
               stage={stage}
@@ -180,17 +226,27 @@ export function ProductMilestones({
   const currentIndex = LIFECYCLE_STAGES.findIndex(
     (stage) => stage.key === currentStage,
   );
+  const isSatisfied = (status: string) =>
+    status === "COMPLETED" || status === "BLOCKED";
   const grouped = LIFECYCLE_STAGES.map((stage, index) => {
     const items = milestones.filter((milestone) => milestone.stage === stage.key);
-    const completed = items.filter((milestone) => milestone.status === "COMPLETED").length;
+    const completed = items.filter((m) => m.status === "COMPLETED").length;
+    const doneCount = items.filter((m) => isSatisfied(m.status)).length;
+    const weightTotal = items.reduce((sum, m) => sum + (m.weight || 0), 0);
+    const weightDone = items
+      .filter((m) => isSatisfied(m.status))
+      .reduce((sum, m) => sum + (m.weight || 0), 0);
     const required = items.filter((milestone) => milestone.isRequired);
-    const requiredCompleted = required.filter(
-      (milestone) => milestone.status === "COMPLETED",
+    const requiredCompleted = required.filter((m) =>
+      isSatisfied(m.status),
     ).length;
     return {
       ...stage,
       items,
       completed,
+      doneCount,
+      weightTotal,
+      weightDone,
       requiredTotal: required.length,
       requiredCompleted,
       isCurrent: stage.key === currentStage,
@@ -202,9 +258,11 @@ export function ProductMilestones({
   return (
     <div className="space-y-3">
       {grouped.map((stage) => {
-        const percent = stage.items.length
-          ? Math.round((stage.completed / stage.items.length) * 100)
-          : 0;
+        const percent = stage.weightTotal
+          ? Math.round((stage.weightDone / stage.weightTotal) * 100)
+          : stage.items.length
+            ? Math.round((stage.doneCount / stage.items.length) * 100)
+            : 0;
         return (
           <details
             key={stage.key}
@@ -232,7 +290,7 @@ export function ProductMilestones({
               ) : null}
               <span className="ml-auto text-[10px] font-medium text-muted">
                 {stage.items.length
-                  ? `${stage.requiredCompleted}/${stage.requiredTotal} required · ${stage.completed}/${stage.items.length} done`
+                  ? `${stage.requiredCompleted}/${stage.requiredTotal} required · ${stage.doneCount}/${stage.items.length} done`
                   : stage.editable
                     ? "No milestones yet — expand to add"
                     : "No milestones yet"}
@@ -309,8 +367,10 @@ export function currentStageGateReadiness(
       met: true,
     },
     {
-      label: "All required milestones completed",
-      met: required.every((item) => item.status === "COMPLETED"),
+      label: "All required milestones completed or blocked",
+      met: required.every(
+        (item) => item.status === "COMPLETED" || item.status === "BLOCKED",
+      ),
     },
     {
       label: "No unresolved blocking conditions",

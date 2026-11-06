@@ -62,13 +62,30 @@ export function nextStage(stage: string): LifecycleStage | null {
     : null;
 }
 
+// Gates that move a product INTO Validation or MVP are the cheaper, earlier
+// decisions; everything from Pilot onward commits real resources and needs a
+// larger quorum. Thresholds come from the approval.policy config.
+export function gateApprovalsNeeded(
+  targetStage: string,
+  earlyCount: number,
+  lateCount: number,
+): number {
+  return stageOrder(targetStage) <= stageOrder("MVP") ? earlyCount : lateCount;
+}
+
 export const PRODUCT_HEALTH = ["ON_TRACK", "AT_RISK", "BLOCKED", "COMPLETED"] as const;
 export type ProductHealth = (typeof PRODUCT_HEALTH)[number];
 
 export const PRODUCT_VISIBILITY = ["EVERYONE", "TEAMS", "ADMINS_ONLY"] as const;
 export type ProductVisibility = (typeof PRODUCT_VISIBILITY)[number];
 
-export const MILESTONE_STATUSES = ["NOT_STARTED", "IN_PROGRESS", "COMPLETED"] as const;
+export const MILESTONE_STATUSES = [
+  "NOT_STARTED",
+  "IN_PROGRESS",
+  "PARKED",
+  "BLOCKED",
+  "COMPLETED",
+] as const;
 export type MilestoneStatus = (typeof MILESTONE_STATUSES)[number];
 
 export const GATE_STATUSES = [

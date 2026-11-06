@@ -19,6 +19,17 @@ const optionalText = (max: number) =>
     .or(z.literal(""))
     .transform((value) => (value ? value : undefined));
 
+const weightField = z
+  .string()
+  .trim()
+  .optional()
+  .or(z.literal(""))
+  .transform((value) => (value && value.trim() !== "" ? value.trim() : "100"))
+  .refine(
+    (value) => /^\d{1,3}$/.test(value) && Number(value) >= 1 && Number(value) <= 100,
+    "Weight must be a whole number from 1 to 100",
+  );
+
 export const productMilestoneSchema = z.object({
   title: z
     .string()
@@ -27,6 +38,7 @@ export const productMilestoneSchema = z.object({
     .max(120, "Keep the title under 120 characters"),
   description: optionalText(300),
   isRequired: z.boolean().default(true),
+  weight: weightField,
   dueDate: z
     .string()
     .optional()
@@ -49,6 +61,7 @@ export const milestoneEditorSchema = z.object({
     .max(120, "Keep the title under 120 characters"),
   description: optionalText(500),
   isRequired: z.boolean().default(true),
+  weight: weightField,
   dueDate: optionalDate,
   ownerId: optionalText(80),
   evidenceLink: optionalText(500),
@@ -57,6 +70,12 @@ export const milestoneEditorSchema = z.object({
   unit: optionalText(20),
 });
 export type MilestoneEditorInput = z.infer<typeof milestoneEditorSchema>;
+
+export const milestoneStatusSchema = z.object({
+  status: z.enum(["IN_PROGRESS", "COMPLETED", "PARKED", "BLOCKED"]),
+  reason: optionalText(500),
+});
+export type MilestoneStatusInput = z.infer<typeof milestoneStatusSchema>;
 
 export const gateSubmitSchema = z.object({
   note: optionalText(2000),

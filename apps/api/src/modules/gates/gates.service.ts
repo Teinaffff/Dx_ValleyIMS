@@ -11,6 +11,7 @@ import {
   GatePolicy,
   GateRequestSummary,
   GateSubmissionState,
+  gateApprovalsNeeded,
   nextStage,
   PERMISSIONS,
   stageLabel,
@@ -35,6 +36,8 @@ type GateWithPeople = Prisma.StageGateRequestGetPayload<{
 const DEFAULT_POLICY: GatePolicy = {
   mode: "UNANIMOUS",
   approverCount: 3,
+  earlyCount: 2,
+  lateCount: 3,
   allowSelfApproval: false,
   rejectionRequiresReason: true,
 };
@@ -66,11 +69,14 @@ export class GatesService {
 
     const target = nextStage(product.stage);
     const checks = this.buildChecks(product, target, Boolean(pendingRequest));
+    const needed = target
+      ? gateApprovalsNeeded(target, policy.earlyCount, policy.lateCount)
+      : 0;
     const eligibleApprovers = candidates
       .filter(
         (candidate) => policy.allowSelfApproval || candidate.id !== product.ownerId,
       )
-      .slice(0, policy.approverCount)
+      .slice(0, needed)
       .map((candidate) => ({
         id: candidate.id,
         name: candidate.name,
@@ -121,22 +127,26 @@ export class GatesService {
     }
 
     const candidates = await this.approverCandidates();
-    const approvers = candidates
-      .filter(
-        (candidate) =>
-          policy.allowSelfApproval ||
-          (candidate.id !== product.ownerId && candidate.id !== user.id),
-      )
-      .slice(0, policy.approverCount);
-    if (!approvers.length) {
+    const needed = gateApprovalsNeeded(target, policy.earlyCount, policy.lateCount);
+    const eligible = candidates.filter(
+      (candidate) =>
+        policy.allowSelfApproval ||
+        (candidate.id !== product.ownerId && candidate.id !== user.id),
+    );
+    if (eligible.length < needed) {
       throw new BadRequestException(
-        "No eligible approvers are available. Ask an administrator to grant gate.decide to a reviewer.",
+        `This gate needs ${needed} independent evaluator${
+          needed === 1 ? "" : "s"
+        }, but only ${eligible.length} eligible ${
+          eligible.length === 1 ? "reviewer is" : "reviewers are"
+        } available. Ask an administrator to grant gate.decide to more reviewers.`,
       );
     }
+    const approvers = eligible.slice(0, needed);
 
     const effectivePolicy: GatePolicy = {
       ...policy,
-      approverCount: approvers.length,
+      approverCount: needed,
     };
     const snapshot = this.buildSnapshot(product, target, policy, checks);
 
@@ -244,12 +254,32 @@ export class GatesService {
     }
 
     const policy = this.normalizePolicy(request.policy);
-    if (
-      !policy.allowSelfApproval &&
-      (user.id === product.ownerId || user.id === request.submittedById)
-    ) {
-      throw new ForbiddenException(
-        "You cannot decide on a stage gate you own or submitted.",
+    const isAdmin = user.role === "ADMIN";
+    const panelMember = request.approvers.find(
+      (approver) => approver.userId === user.id,
+    );
+
+    // Administrators have full override: they may decide any pending gate,
+    // including one they submitted, and their vote counts toward the quorum.
+    // Everyone else is held to separation of duties and panel membership.
+    if (!isAdmin) {
+      if (
+        !policy.allowSelfApproval &&
+        (user.id === product.ownerId || user.id === request.submittedById)
+      ) {
+        throw new ForbiddenException(
+          "You cannot decide on a stage gate you own or submitted.",
+        );
+      }
+      if (!panelMember) {
+        throw new ForbiddenException(
+          "You're not a reviewer on this stage gate.",
+        );
+      }
+    }
+    if (panelMember?.decision) {
+      throw new ConflictException(
+        "You've already recorded a decision for this stage gate.",
       );
     }
 
@@ -262,121 +292,180 @@ export class GatesService {
       throw new BadRequestException("A rejection requires a written reason.");
     }
 
+    const required = Math.max(1, policy.approverCount);
     const decidedAt = new Date();
-    const updated = await this.prisma.$transaction(async (tx) => {
-      const closed = await tx.stageGateRequest.updateMany({
-        where: { id: request.id, status: "PENDING_APPROVAL" },
-        data: {
-          status: dto.decision,
-          decidedAt,
-          resolutionNote: comment,
-        },
-      });
-      if (closed.count === 0) {
-        throw new ConflictException(
-          "This stage-gate request has already been decided.",
-        );
-      }
 
-      await tx.stageGateApprover.upsert({
-        where: {
-          requestId_userId: { requestId: request.id, userId: user.id },
-        },
-        create: {
-          requestId: request.id,
-          userId: user.id,
-          decision: dto.decision,
-          comment,
-          decidedAt,
-        },
-        update: {
-          decision: dto.decision,
-          comment,
-          decidedAt,
-        },
-      });
-
-      await tx.stageGateDecision.create({
-        data: {
-          requestId: request.id,
-          approverId: user.id,
-          decision: dto.decision,
-          comment,
-        },
-      });
-
-      if (dto.decision === "APPROVED") {
-        await tx.product.update({
-          where: { id: productId },
-          data: { stage: request.toStage, status: "ACTIVE" },
+    const updated = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.stageGateApprover.upsert({
+          where: {
+            requestId_userId: { requestId: request.id, userId: user.id },
+          },
+          create: {
+            requestId: request.id,
+            userId: user.id,
+            decision: dto.decision,
+            comment,
+            decidedAt,
+          },
+          update: { decision: dto.decision, comment, decidedAt },
         });
-        await tx.stageHistory.create({
+
+        await tx.stageGateDecision.create({
           data: {
-            productId,
-            fromStage: request.fromStage,
-            toStage: request.toStage,
-            movedById: user.id,
-            reason: comment ?? "Stage gate approved",
-            metadata: {
-              requestId: request.id,
-              gateStatus: "APPROVED",
-            },
+            requestId: request.id,
+            approverId: user.id,
+            decision: dto.decision,
+            comment,
           },
         });
-      } else if (dto.decision === "PARKED") {
-        await tx.product.update({
-          where: { id: productId },
-          data: { status: "PARKED" },
+
+        const approvals = await tx.stageGateApprover.count({
+          where: { requestId: request.id, decision: "APPROVED" },
         });
-      }
 
-      const recipients = new Set<string>([
-        product.ownerId,
-        request.submittedById,
-        ...request.approvers.map((approver) => approver.userId),
-      ]);
-      recipients.delete(user.id);
+        const isVeto = dto.decision === "REJECTED" || dto.decision === "PARKED";
+        const reachedQuorum =
+          dto.decision === "APPROVED" && approvals >= required;
+        const finalizes = isVeto || reachedQuorum;
 
-      if (recipients.size) {
-        const decisionLabel =
-          dto.decision === "APPROVED"
-            ? "approved"
-            : dto.decision === "REJECTED"
-              ? "rejected"
-              : "parked";
-        const body =
-          dto.decision === "APPROVED"
-            ? `${user.name} approved ${stageLabel(request.fromStage)} → ${stageLabel(request.toStage)}. ${product.name} moved to ${stageLabel(request.toStage)}.`
-            : dto.decision === "REJECTED"
-              ? `${user.name} rejected ${stageLabel(request.fromStage)} → ${stageLabel(request.toStage)}. ${product.name} stays in ${stageLabel(request.fromStage)}.${comment ? ` Reason: ${comment}` : ""}`
-              : `${user.name} parked ${product.name} at the ${stageLabel(request.fromStage)} → ${stageLabel(request.toStage)} gate.${comment ? ` Note: ${comment}` : ""}`;
+        if (finalizes) {
+          await tx.stageGateRequest.update({
+            where: { id: request.id },
+            data: {
+              status: dto.decision,
+              decidedAt,
+              resolutionNote: comment,
+            },
+          });
+        }
 
-        await tx.notification.createMany({
-          data: [...recipients].map((userId) => ({
-            userId,
-            type: `gate.${decisionLabel}`,
-            title: `Stage gate ${decisionLabel}: ${product.name}`,
-            body,
-            link: `/admin/products/${productId}`,
-          })),
+        if (reachedQuorum) {
+          await tx.product.update({
+            where: { id: productId },
+            data: { stage: request.toStage, status: "ACTIVE" },
+          });
+          await tx.stageHistory.create({
+            data: {
+              productId,
+              fromStage: request.fromStage,
+              toStage: request.toStage,
+              movedById: user.id,
+              reason: comment ?? "Stage gate approved",
+              metadata: {
+                requestId: request.id,
+                gateStatus: "APPROVED",
+                approvals,
+                required,
+              },
+            },
+          });
+        } else if (dto.decision === "PARKED") {
+          await tx.product.update({
+            where: { id: productId },
+            data: { status: "PARKED" },
+          });
+        }
+
+        if (finalizes) {
+          const recipients = new Set<string>([
+            product.ownerId,
+            request.submittedById,
+            ...request.approvers.map((approver) => approver.userId),
+          ]);
+          recipients.delete(user.id);
+
+          if (recipients.size) {
+            const decisionLabel =
+              dto.decision === "APPROVED"
+                ? "approved"
+                : dto.decision === "REJECTED"
+                  ? "rejected"
+                  : "parked";
+            const body =
+              dto.decision === "APPROVED"
+                ? `${approvals}/${required} evaluators approved ${stageLabel(
+                    request.fromStage,
+                  )} → ${stageLabel(request.toStage)}. ${product.name} moved to ${stageLabel(
+                    request.toStage,
+                  )}.`
+                : dto.decision === "REJECTED"
+                  ? `${user.name} rejected ${stageLabel(
+                      request.fromStage,
+                    )} → ${stageLabel(request.toStage)}. ${product.name} stays in ${stageLabel(
+                      request.fromStage,
+                    )}.${comment ? ` Reason: ${comment}` : ""}`
+                  : `${user.name} parked ${product.name} at the ${stageLabel(
+                      request.fromStage,
+                    )} → ${stageLabel(request.toStage)} gate.${
+                      comment ? ` Note: ${comment}` : ""
+                    }`;
+
+            await tx.notification.createMany({
+              data: [...recipients].map((userId) => ({
+                userId,
+                type: `gate.${decisionLabel}`,
+                title: `Stage gate ${decisionLabel}: ${product.name}`,
+                body,
+                link: `/admin/products/${productId}`,
+              })),
+            });
+          }
+        } else {
+          // Still below quorum: nudge the owner and the reviewers who haven't decided.
+          const remaining = required - approvals;
+          const undecided = request.approvers
+            .filter(
+              (approver) => !approver.decision && approver.userId !== user.id,
+            )
+            .map((approver) => approver.userId);
+          const recipients = new Set<string>([
+            product.ownerId,
+            request.submittedById,
+            ...undecided,
+          ]);
+          recipients.delete(user.id);
+
+          if (recipients.size) {
+            await tx.notification.createMany({
+              data: [...recipients].map((userId) => ({
+                userId,
+                type: "gate.progress",
+                title: `Gate progress: ${product.name}`,
+                body: `${user.name} approved ${stageLabel(
+                  request.fromStage,
+                )} → ${stageLabel(request.toStage)}. ${approvals}/${required} done — ${remaining} more evaluator${
+                  remaining === 1 ? "" : "s"
+                } needed before ${product.name} moves on.`,
+                link: `/admin/approvals`,
+              })),
+            });
+          }
+        }
+
+        return tx.stageGateRequest.findUniqueOrThrow({
+          where: { id: request.id },
+          include: gateInclude,
         });
-      }
-
-      return tx.stageGateRequest.findUniqueOrThrow({
-        where: { id: request.id },
-        include: gateInclude,
-      });
-    });
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
 
     const action =
       dto.decision === "APPROVED"
-        ? "stage.approved"
+        ? updated.status === "APPROVED"
+          ? "stage.approved"
+          : "stage.approval_recorded"
         : dto.decision === "REJECTED"
           ? "stage.rejected"
           : "stage.parked";
     const auditSummary =
       dto.decision === "APPROVED"
-        ? `Approved ${product.name} for ${stageLabel(request.toStage)}`
+        ? updated.status === "APPROVED"
+          ? `Approved ${product.name} for ${stageLabel(request.toStage)} (${required}/${required} evaluators)`
+          : `Recorded approval on ${product.name} gate (${stageLabel(
+              request.fromStage,
+            )} → ${stageLabel(request.toStage)})`
         : dto.decision === "REJECTED"
           ? `Rejected ${product.name} at the ${stageLabel(request.fromStage)} → ${stageLabel(request.toStage)} gate`
           : `Parked ${product.name} at the ${stageLabel(request.fromStage)} → ${stageLabel(request.toStage)} gate`;
@@ -428,7 +517,9 @@ export class GatesService {
             title: true,
             description: true,
             isRequired: true,
+            weight: true,
             status: true,
+            statusReason: true,
             dueDate: true,
             evidenceLink: true,
             targetValue: true,
@@ -451,8 +542,18 @@ export class GatesService {
       (milestone) => milestone.stage === product.stage,
     );
     const required = current.filter((milestone) => milestone.isRequired);
-    const completedRequired = required.filter(
-      (milestone) => milestone.status === "COMPLETED",
+    // A required milestone clears the gate when COMPLETED, or BLOCKED with a
+    // reason (a documented dead-end). PARKED, NOT_STARTED and IN_PROGRESS hold it.
+    const isSatisfied = (status: string) =>
+      status === "COMPLETED" || status === "BLOCKED";
+    const satisfiedRequired = required.filter((milestone) =>
+      isSatisfied(milestone.status),
+    );
+    const parkedRequired = required.filter(
+      (milestone) => milestone.status === "PARKED",
+    );
+    const blockedRequired = required.filter(
+      (milestone) => milestone.status === "BLOCKED",
     );
 
     const checks: GateCheck[] = [
@@ -491,10 +592,20 @@ export class GatesService {
       },
       {
         key: "required",
-        label: "All required milestones in this stage are complete",
-        met: completedRequired.length === required.length,
+        label: "All required milestones are completed or blocked",
+        met: satisfiedRequired.length === required.length,
         detail: required.length
-          ? `${completedRequired.length}/${required.length} required milestones complete`
+          ? [
+              `${satisfiedRequired.length}/${required.length} required milestones resolved`,
+              blockedRequired.length
+                ? `${blockedRequired.length} blocked with a reason`
+                : null,
+              parkedRequired.length
+                ? `Parked: ${parkedRequired.map((m) => m.title).join(", ")}`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")
           : "No required milestones in this stage.",
       },
     ];
@@ -528,7 +639,9 @@ export class GatesService {
           title: milestone.title,
           description: milestone.description,
           isRequired: milestone.isRequired,
+          weight: milestone.weight,
           status: milestone.status,
+          statusReason: milestone.statusReason,
           dueDate: milestone.dueDate?.toISOString() ?? null,
           evidenceLink: milestone.evidenceLink,
           targetValue: milestone.targetValue,
@@ -544,11 +657,19 @@ export class GatesService {
     });
     const raw = (setting?.value ?? {}) as Record<string, unknown>;
     const approverCount = Number(raw.approverCount);
+    const earlyCount = Number(raw.earlyCount);
+    const lateCount = Number(raw.lateCount);
     return {
       mode: raw.mode === "MAJORITY" ? "MAJORITY" : "UNANIMOUS",
       approverCount: Number.isFinite(approverCount)
         ? Math.min(10, Math.max(1, Math.trunc(approverCount)))
         : DEFAULT_POLICY.approverCount,
+      earlyCount: Number.isFinite(earlyCount)
+        ? Math.min(10, Math.max(1, Math.trunc(earlyCount)))
+        : DEFAULT_POLICY.earlyCount,
+      lateCount: Number.isFinite(lateCount)
+        ? Math.min(10, Math.max(1, Math.trunc(lateCount)))
+        : DEFAULT_POLICY.lateCount,
       allowSelfApproval: raw.allowSelfApproval === true,
       rejectionRequiresReason:
         typeof raw.rejectionRequiresReason === "boolean"
@@ -574,6 +695,11 @@ export class GatesService {
   }
 
   private mapSummary(request: GateWithPeople): GateRequestSummary {
+    const policy = this.normalizePolicy(request.policy);
+    const approvalsNeeded = Math.max(1, policy.approverCount);
+    const approvalsReceived = request.approvers.filter(
+      (approver) => approver.decision === "APPROVED",
+    ).length;
     return {
       id: request.id,
       status: request.status,
@@ -583,7 +709,9 @@ export class GatesService {
       submittedBy: request.submittedBy,
       note: request.note,
       round: request.round,
-      policy: this.normalizePolicy(request.policy),
+      approvalsNeeded,
+      approvalsReceived,
+      policy,
       approvers: request.approvers.map((approver) => ({
         id: approver.id,
         user: approver.user,
@@ -597,11 +725,19 @@ export class GatesService {
   private normalizePolicy(value: Prisma.JsonValue): GatePolicy {
     const raw = (value ?? {}) as Record<string, unknown>;
     const approverCount = Number(raw.approverCount);
+    const earlyCount = Number(raw.earlyCount);
+    const lateCount = Number(raw.lateCount);
     return {
       mode: raw.mode === "MAJORITY" ? "MAJORITY" : "UNANIMOUS",
       approverCount: Number.isFinite(approverCount)
         ? Math.max(1, Math.trunc(approverCount))
         : DEFAULT_POLICY.approverCount,
+      earlyCount: Number.isFinite(earlyCount)
+        ? Math.max(1, Math.trunc(earlyCount))
+        : DEFAULT_POLICY.earlyCount,
+      lateCount: Number.isFinite(lateCount)
+        ? Math.max(1, Math.trunc(lateCount))
+        : DEFAULT_POLICY.lateCount,
       allowSelfApproval: raw.allowSelfApproval === true,
       rejectionRequiresReason: raw.rejectionRequiresReason !== false,
     };
@@ -620,10 +756,9 @@ export class GatesService {
   }
 
   private assertSubmitAccess(ownerId: string, user: AuthUser) {
-    if (user.role === "ADMIN") return;
     if (ownerId !== user.id) {
       throw new ForbiddenException(
-        "Only the product owner or an administrator can submit a stage gate",
+        "Only the product owner can submit a stage gate for approval.",
       );
     }
   }

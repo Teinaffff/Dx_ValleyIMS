@@ -63,6 +63,8 @@ export interface MilestoneProgress {
   total: number;
   requiredTotal: number;
   requiredCompleted: number;
+  weightTotal: number;
+  weightDone: number;
   percent: number;
 }
 
@@ -73,7 +75,10 @@ export interface MilestoneDto {
   description: string | null;
   isRequired: boolean;
   isStandard: boolean;
+  weight: number;
   status: MilestoneStatus;
+  statusReason: string | null;
+  startedAt: string | null;
   owner: UserRef | null;
   dueDate: string | null;
   evidenceLink: string | null;
@@ -153,12 +158,16 @@ export interface ApprovalItem {
   toStage: LifecycleStage;
   submittedAt: string;
   approvers: ApprovalApprover[];
+  approvalsNeeded: number;
+  approvalsReceived: number;
   approvalPolicy: string;
 }
 
 export interface GatePolicy {
   mode: "UNANIMOUS" | "MAJORITY";
   approverCount: number;
+  earlyCount: number;
+  lateCount: number;
   allowSelfApproval: boolean;
   rejectionRequiresReason: boolean;
 }
@@ -180,6 +189,8 @@ export interface GateRequestSummary {
   note: string | null;
   round: number;
   approvers: ApprovalApprover[];
+  approvalsNeeded: number;
+  approvalsReceived: number;
   policy: GatePolicy;
 }
 
@@ -288,6 +299,7 @@ export interface IdeaInboxItem {
   reviewNote: string | null;
   deleteReason: string | null;
   reviewedBy: UserRef | null;
+  convertedProductId: string | null;
   approvedAt: string | null;
   deletedAt: string | null;
   createdAt: string;

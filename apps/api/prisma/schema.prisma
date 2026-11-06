@@ -32,6 +32,8 @@ enum ProductVisibility {
 enum MilestoneStatus {
   NOT_STARTED
   IN_PROGRESS
+  PARKED
+  BLOCKED
   COMPLETED
 }
 
@@ -302,6 +304,7 @@ model Milestone {
   description   String?
   isRequired    Boolean         @default(true)
   isStandard    Boolean         @default(false)
+  weight        Float           @default(100)
   targetValue   Float?
   actualValue   Float?
   unit          String?
@@ -309,6 +312,8 @@ model Milestone {
   owner         User?           @relation("MilestoneOwner", fields: [ownerId], references: [id])
   dueDate       DateTime?
   status        MilestoneStatus @default(NOT_STARTED)
+  statusReason  String?
+  startedAt     DateTime?
   evidenceLink  String?
   completedAt   DateTime?
   completedById String?

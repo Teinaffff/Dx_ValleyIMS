@@ -33,6 +33,7 @@ function toPayload(values: MilestoneEditorInput) {
     title: values.title,
     description: values.description ?? null,
     isRequired: values.isRequired,
+    weight: Number(values.weight) || 100,
     dueDate: values.dueDate ?? null,
     ownerId: values.ownerId ?? null,
     evidenceLink: values.evidenceLink ?? null,
@@ -67,6 +68,10 @@ function MilestoneFormDialog({
       title: milestone?.title ?? "",
       description: milestone?.description ?? "",
       isRequired: milestone?.isRequired ?? true,
+      weight:
+        milestone?.weight !== null && milestone?.weight !== undefined
+          ? String(milestone.weight)
+          : "100",
       dueDate: milestone?.dueDate?.slice(0, 10) ?? "",
       ownerId: milestone?.owner?.id ?? "",
       evidenceLink: milestone?.evidenceLink ?? "",
@@ -171,6 +176,21 @@ function MilestoneFormDialog({
               </Select>
             </Field>
           </div>
+
+          <Field
+            label="Weight (%)"
+            error={form.formState.errors.weight?.message}
+            hint="Relative importance of this milestone (1–100) for stage progress."
+          >
+            <Input
+              type="number"
+              min={1}
+              max={100}
+              step={1}
+              placeholder="100"
+              {...form.register("weight")}
+            />
+          </Field>
 
           <Field label="Evidence link">
             <Input

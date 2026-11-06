@@ -3,6 +3,7 @@ import {
   ArrowDownWideNarrow,
   ArrowUpWideNarrow,
   CheckCircle2,
+  ExternalLink,
   Lightbulb,
   Mail,
   RotateCcw,
@@ -13,6 +14,7 @@ import {
 import {
   PERMISSIONS,
   STATUS_LABELS,
+  type CategoryMeta,
   type IdeaInboxResult,
   type IdeaStatus,
 } from "@ims/shared";
@@ -22,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { IdeaActions } from "@/components/admin/idea-actions";
+import { ConvertIdeaDialog } from "@/components/admin/product-form";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
 
@@ -86,14 +89,19 @@ export default async function IdeasPage({
   query.set("sort", sort);
   query.set("page", String(page));
 
-  const [session, data] = await Promise.all([
+  const [session, data, meta] = await Promise.all([
     getSession(),
     serverGet<IdeaInboxResult>(`/api/ideas?${query.toString()}`),
+    serverGet<CategoryMeta>("/api/products/meta"),
   ]);
 
   const canApprove =
     !!session &&
     (session.role === "ADMIN" || session.permissions.includes(PERMISSIONS.IDEA_APPROVE));
+  const canConvert =
+    !!session &&
+    (session.role === "ADMIN" ||
+      session.permissions.includes(PERMISSIONS.PRODUCT_CREATE));
   const canDelete =
     !!session &&
     (session.role === "ADMIN" || session.permissions.includes(PERMISSIONS.IDEA_DELETE));
@@ -300,14 +308,39 @@ export default async function IdeasPage({
                   </div>
                 </div>
 
-                <IdeaActions
-                  ideaId={idea.id}
-                  title={idea.title}
-                  status={idea.status as IdeaStatus}
-                  canApprove={canApprove}
-                  canDelete={canDelete}
-                  canRestore={canRestore}
-                />
+                <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  {idea.convertedProductId ? (
+                    <Button asChild variant="outline" size="md">
+                      <Link href={`/admin/products/${idea.convertedProductId}`}>
+                        <ExternalLink className="h-4 w-4" /> View product
+                      </Link>
+                    </Button>
+                  ) : (
+                    canConvert &&
+                    (idea.status === "APPROVED" || idea.status === "ACCEPTED") && (
+                      <ConvertIdeaDialog
+                        idea={{
+                          id: idea.id,
+                          title: idea.title,
+                          problem: idea.problem,
+                          solution: idea.solution,
+                          expectedImpact: idea.expectedImpact,
+                        }}
+                        owners={meta?.owners ?? []}
+                        teams={meta?.teams ?? []}
+                      />
+                    )
+                  )}
+
+                  <IdeaActions
+                    ideaId={idea.id}
+                    title={idea.title}
+                    status={idea.status as IdeaStatus}
+                    canApprove={canApprove}
+                    canDelete={canDelete}
+                    canRestore={canRestore}
+                  />
+                </div>
               </div>
 
               {idea.status === "APPROVED" && (idea.reviewedBy || idea.reviewNote) ? (

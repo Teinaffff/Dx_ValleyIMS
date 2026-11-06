@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import {
   stageLabel,
   type ApprovalItem,
+  type GateRequestSummary,
   type GateSubmissionState,
 } from "@ims/shared";
 import { apiFetch, ApiError } from "@/lib/api";
@@ -93,20 +94,35 @@ function DecisionDialog({
     setSubmitting(decision);
     setError(null);
     try {
-      await apiFetch(`/api/products/${approval.product.id}/gate/decision`, {
-        method: "POST",
-        body: JSON.stringify({
-          decision,
-          comment: comment.trim() || undefined,
-        }),
-      });
-      toast.success(
-        decision === "APPROVED"
-          ? `${approval.product.name} approved — moved to ${stageLabel(approval.toStage)}`
-          : decision === "REJECTED"
-            ? `${approval.product.name} rejected — stays in ${stageLabel(approval.fromStage)}`
-            : `${approval.product.name} parked at ${stageLabel(approval.fromStage)}`,
+      const result = await apiFetch<GateRequestSummary>(
+        `/api/products/${approval.product.id}/gate/decision`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            decision,
+            comment: comment.trim() || undefined,
+          }),
+        },
       );
+      if (decision === "APPROVED") {
+        const remaining = Math.max(
+          0,
+          result.approvalsNeeded - result.approvalsReceived,
+        );
+        toast.success(
+          result.status === "APPROVED"
+            ? `${approval.product.name} approved — moved to ${stageLabel(approval.toStage)} (${result.approvalsNeeded}/${result.approvalsNeeded} evaluators)`
+            : `Approval recorded — ${remaining} more evaluator${remaining === 1 ? "" : "s"} needed (${result.approvalsReceived}/${result.approvalsNeeded})`,
+        );
+      } else if (decision === "REJECTED") {
+        toast.success(
+          `${approval.product.name} rejected — stays in ${stageLabel(approval.fromStage)}`,
+        );
+      } else {
+        toast.success(
+          `${approval.product.name} parked at ${stageLabel(approval.fromStage)}`,
+        );
+      }
       onOpenChange(false);
       router.refresh();
     } catch (requestError) {
@@ -127,8 +143,9 @@ function DecisionDialog({
           <p className="label-caps">Stage gate decision</p>
           <DialogTitle>{approval.product.name}</DialogTitle>
           <DialogDescription>
-            Any authorised evaluator may decide. Approving advances the product one
-            stage immediately; rejecting keeps it in place; parking pauses the product.
+            This gate needs several independent evaluator approvals. Your approval is
+            recorded and the product only advances once enough evaluators have approved;
+            a single rejection closes the gate immediately.
           </DialogDescription>
         </DialogHeader>
 
@@ -168,6 +185,10 @@ function DecisionDialog({
               </span>
               <span className="text-muted/60">·</span>
               <span>{pending.approvers.length} reviewers notified</span>
+              <span className="text-muted/60">·</span>
+              <span className="font-semibold text-ink/75">
+                {pending.approvalsReceived}/{pending.approvalsNeeded} approved
+              </span>
             </div>
 
             {pending.note ? (
@@ -304,7 +325,7 @@ function DecisionDialog({
             ) : (
               <ShieldCheck className="h-4 w-4" />
             )}
-            Approve &amp; advance
+            Approve
           </Button>
         </div>
       </DialogContent>

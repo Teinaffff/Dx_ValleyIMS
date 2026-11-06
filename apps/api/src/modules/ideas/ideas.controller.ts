@@ -21,6 +21,7 @@ import {
   ListIdeasDto,
   UpdateIdeaStatusDto,
 } from "./ideas.dto";
+import { CreateProductDto } from "../products/products.dto";
 import { IdeasService } from "./ideas.service";
 
 @Public()
@@ -71,5 +72,16 @@ export class IdeasController {
   @RequirePermissions(PERMISSIONS.IDEA_RESTORE)
   restore(@Param("id") id: string, @CurrentUser() user: AuthUser) {
     return this.ideasService.restore(id, user);
+  }
+
+  @Post(":id/convert")
+  @HttpCode(201)
+  @RequirePermissions(PERMISSIONS.PRODUCT_CREATE)
+  convert(
+    @Param("id") id: string,
+    @Body() dto: CreateProductDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ideasService.convert(id, dto, user);
   }
 }

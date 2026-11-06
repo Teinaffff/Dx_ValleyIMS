@@ -1,10 +1,11 @@
 "use client";
 
 import * as React from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Loader2, PencilLine, Plus, Trash2 } from "lucide-react";
+import { Loader2, PencilLine, Plus, Rocket, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import {
   LIFECYCLE_STAGES,
@@ -33,12 +34,16 @@ function ProductForm({
   owners,
   teams,
   onDone,
+  prefill,
+  ideaId,
 }: {
   mode: "create" | "edit";
   product?: ProductDetail;
   owners: UserRef[];
   teams: TeamRef[];
   onDone: (created?: ProductDetail) => void;
+  prefill?: { name: string; description: string };
+  ideaId?: string;
 }) {
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
@@ -46,8 +51,8 @@ function ProductForm({
   const form = useForm<ProductCreateInput>({
     resolver: zodResolver(productCreateSchema),
     defaultValues: {
-      name: product?.name ?? "",
-      description: product?.description ?? "",
+      name: product?.name ?? prefill?.name ?? "",
+      description: product?.description ?? prefill?.description ?? "",
       ownerId: product?.owner.id ?? "",
       teamIds:
         product?.teams?.map((team) => team.id) ??
@@ -81,11 +86,18 @@ function ProductForm({
       };
 
       if (mode === "create") {
-        const created = await apiFetch<ProductDetail>("/api/products", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        toast.success(`${created.name} added to the portfolio`);
+        const created = await apiFetch<ProductDetail>(
+          ideaId ? `/api/ideas/${ideaId}/convert` : "/api/products",
+          {
+            method: "POST",
+            body: JSON.stringify(payload),
+          },
+        );
+        toast.success(
+          ideaId
+            ? `${created.name} created from this idea`
+            : `${created.name} added to the portfolio`,
+        );
         onDone(created);
         return;
       }
@@ -292,6 +304,7 @@ function ProductForm({
                     title: "",
                     description: "",
                     isRequired: true,
+                    weight: "100",
                     dueDate: "",
                   })
                 }
@@ -309,7 +322,7 @@ function ProductForm({
                       key={field.id}
                       className="rounded-2xl border border-line bg-canvas/40 p-3"
                     >
-                      <div className="grid gap-2 sm:grid-cols-[1fr_150px_auto]">
+                      <div className="grid gap-2 sm:grid-cols-[1fr_150px_84px_auto]">
                         <Input
                           placeholder="Milestone title"
                           aria-label="Milestone title"
@@ -319,6 +332,15 @@ function ProductForm({
                           type="date"
                           aria-label="Milestone due date"
                           {...form.register(`customMilestones.${index}.dueDate`)}
+                        />
+                        <Input
+                          type="number"
+                          min={1}
+                          max={100}
+                          step={1}
+                          placeholder="100"
+                          aria-label="Milestone weight percent"
+                          {...form.register(`customMilestones.${index}.weight`)}
                         />
                         <button
                           type="button"
@@ -463,6 +485,77 @@ export function EditProductDialog({
           teams={teams}
           onDone={() => {
             setOpen(false);
+            router.refresh();
+          }}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function clamp(value: string, max: number) {
+  const trimmed = value.trim();
+  return trimmed.length > max ? `${trimmed.slice(0, max - 1).trimEnd()}…` : trimmed;
+}
+
+export function ConvertIdeaDialog({
+  idea,
+  owners,
+  teams,
+}: {
+  idea: {
+    id: string;
+    title: string;
+    problem: string;
+    solution: string;
+    expectedImpact: string | null;
+  };
+  owners: UserRef[];
+  teams: TeamRef[];
+}) {
+  const router = useRouter();
+  const [open, setOpen] = React.useState(false);
+
+  const prefill = React.useMemo(() => {
+    const description = [
+      idea.problem ? `Problem: ${idea.problem}` : null,
+      idea.solution ? `Proposed solution: ${idea.solution}` : null,
+      idea.expectedImpact ? `Expected impact: ${idea.expectedImpact}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    return {
+      name: clamp(idea.title, 80),
+      description: clamp(description, 600),
+    };
+  }, [idea]);
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="md" variant="secondary">
+          <Rocket className="h-4 w-4" /> Let's make it a product
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <p className="label-caps">From idea to product</p>
+          <DialogTitle>Turn “{idea.title}” into a product</DialogTitle>
+          <DialogDescription>
+            The name and description are pre-filled from the approved idea. Assign a
+            product owner, pick the teams and starting stage, then create it — the idea
+            is marked as converted and linked to this product.
+          </DialogDescription>
+        </DialogHeader>
+        <ProductForm
+          mode="create"
+          ideaId={idea.id}
+          prefill={prefill}
+          owners={owners}
+          teams={teams}
+          onDone={(created) => {
+            setOpen(false);
+            if (created) router.push(`/admin/products/${created.id}`);
             router.refresh();
           }}
         />

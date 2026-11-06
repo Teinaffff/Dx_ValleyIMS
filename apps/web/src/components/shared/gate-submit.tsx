@@ -35,10 +35,13 @@ import {
 } from "@/components/ui/dialog";
 
 function PolicyChips({ state }: { state: GateSubmissionState }) {
-  const chips = [
-    "Any evaluator decides",
-    `${state.policy.approverCount} reviewer${state.policy.approverCount === 1 ? "" : "s"} notified`,
-  ];
+  const needed = state.eligibleApprovers.length;
+  const chips = needed
+    ? [
+        `${needed} evaluator approval${needed === 1 ? "" : "s"} needed`,
+        "Any one rejection closes the gate",
+      ]
+    : ["No further gate"];
   return (
     <div className="flex flex-wrap gap-1.5">
       {chips.map((chip) => (
@@ -261,7 +264,7 @@ export function GateSubmitButton({
         size="md"
         variant="outline"
         disabled
-        title="Only the product owner or an administrator can submit a stage gate."
+        title="Only the product owner can submit a stage gate for approval."
       >
         <ShieldCheck className="h-4 w-4" /> Submit for {stageLabel(state.nextStage)}
       </Button>
@@ -296,8 +299,8 @@ export function GatePendingSummary({
         Submitted for {stageLabel(request.toStage)} review
       </p>
       <p className="mt-1 text-[10px] leading-relaxed text-muted">
-        Round {request.round} · awaiting a decision from any evaluator ·{" "}
-        {request.approvers.length} reviewer
+        Round {request.round} · {request.approvalsReceived}/{request.approvalsNeeded}{" "}
+        evaluator approvals in · {request.approvers.length} reviewer
         {request.approvers.length === 1 ? "" : "s"} notified.
       </p>
     </div>

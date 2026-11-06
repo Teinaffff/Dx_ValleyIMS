@@ -11,7 +11,7 @@ import {
 import { PERMISSIONS } from "@ims/shared";
 import { ProductsService } from "./products.service";
 import {
-  CompleteMilestoneDto,
+  SetMilestoneStatusDto,
   CreateMilestoneDto,
   CreateProductDto,
   ListMilestonesDto,
@@ -121,15 +121,15 @@ export class ProductsController {
     return this.productsService.updateMilestone(id, milestoneId, dto, user);
   }
 
-  @Post(":id/milestones/:milestoneId/complete")
+  @Post(":id/milestones/:milestoneId/status")
   @RequirePermissions(PERMISSIONS.MILESTONE_MANAGE)
-  completeMilestone(
+  setMilestoneStatus(
     @Param("id") id: string,
     @Param("milestoneId") milestoneId: string,
-    @Body() dto: CompleteMilestoneDto,
+    @Body() dto: SetMilestoneStatusDto,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.productsService.completeMilestone(id, milestoneId, dto, user);
+    return this.productsService.setMilestoneStatus(id, milestoneId, dto, user);
   }
 
   @Post(":id/milestones/:milestoneId/reopen")
