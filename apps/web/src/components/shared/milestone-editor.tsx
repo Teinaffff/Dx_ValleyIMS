@@ -94,6 +94,15 @@ function MilestoneFormDialog({
     }
   }, [open, form]);
 
+  const ownerOptions = React.useMemo(() => {
+    const list = [...owners];
+    const current = milestone?.owner;
+    if (current && !list.some((owner) => owner.id === current.id)) {
+      list.unshift(current);
+    }
+    return list;
+  }, [owners, milestone]);
+
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitting(true);
     setError(null);
@@ -165,10 +174,13 @@ function MilestoneFormDialog({
             <Field label="Due date">
               <Input type="date" {...form.register("dueDate")} />
             </Field>
-            <Field label="Milestone owner">
+            <Field
+              label="Milestone owner"
+              hint="Owners come from this product's Team. Add people under Team first."
+            >
               <Select {...form.register("ownerId")}>
                 <option value="">No owner</option>
-                {owners.map((owner) => (
+                {ownerOptions.map((owner) => (
                   <option key={owner.id} value={owner.id}>
                     {owner.name}
                   </option>

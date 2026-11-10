@@ -378,3 +378,9 @@ export class ReorderMilestonesDto {
   @IsString({ each: true })
   ids!: string[];
 }
+
+export class AddProductMemberDto {
+  @IsString()
+  @MinLength(1, { message: "Choose someone to add" })
+  userId!: string;
+}

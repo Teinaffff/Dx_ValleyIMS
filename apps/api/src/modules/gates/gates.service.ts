@@ -35,8 +35,8 @@ type GateWithPeople = Prisma.StageGateRequestGetPayload<{
 
 const DEFAULT_POLICY: GatePolicy = {
   mode: "UNANIMOUS",
-  approverCount: 3,
-  earlyCount: 2,
+  approverCount: 1,
+  earlyCount: 1,
   lateCount: 3,
   allowSelfApproval: false,
   rejectionRequiresReason: true,
@@ -76,7 +76,6 @@ export class GatesService {
       .filter(
         (candidate) => policy.allowSelfApproval || candidate.id !== product.ownerId,
       )
-      .slice(0, needed)
       .map((candidate) => ({
         id: candidate.id,
         name: candidate.name,
@@ -142,7 +141,9 @@ export class GatesService {
         } available. Ask an administrator to grant gate.decide to more reviewers.`,
       );
     }
-    const approvers = eligible.slice(0, needed);
+    // Every eligible evaluator and admin may decide; `needed` is only the
+    // quorum. All of them are notified and listed on the request.
+    const approvers = eligible;
 
     const effectivePolicy: GatePolicy = {
       ...policy,
@@ -261,7 +262,8 @@ export class GatesService {
 
     // Administrators have full override: they may decide any pending gate,
     // including one they submitted, and their vote counts toward the quorum.
-    // Everyone else is held to separation of duties and panel membership.
+    // Any other evaluator holding gate.decide may also decide (the route is
+    // permission-guarded); they are held to separation of duties only.
     if (!isAdmin) {
       if (
         !policy.allowSelfApproval &&
@@ -269,11 +271,6 @@ export class GatesService {
       ) {
         throw new ForbiddenException(
           "You cannot decide on a stage gate you own or submitted.",
-        );
-      }
-      if (!panelMember) {
-        throw new ForbiddenException(
-          "You're not a reviewer on this stage gate.",
         );
       }
     }

@@ -1,8 +1,8 @@
-import { Boxes, Crown, Users } from "lucide-react";
+import { Boxes, Users } from "lucide-react";
 import type { TeamSummary } from "@ims/shared";
 import { serverGet } from "@/lib/server-api";
 import { PageHeader } from "@/components/ui/page-header";
-import { UserAvatar, AvatarStack } from "@/components/ui/avatar";
+import { AvatarStack } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 
 export const metadata = { title: "Teams & resources" };
@@ -69,6 +69,27 @@ export default async function TeamsPage() {
                 </div>
               </div>
 
+              <div className="mt-4">
+                <p className="mb-1.5 text-[10px] font-bold uppercase tracking-[0.1em] text-muted">
+                  Products involved
+                </p>
+                {team.products.length ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {team.products.map((product) => (
+                      <a
+                        key={product.id}
+                        href={`/admin/products/${product.id}`}
+                        className="rounded-full bg-primary-soft px-2.5 py-1 text-[11px] font-semibold text-primary hover:underline"
+                      >
+                        {product.name}
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-muted">Not involved in any product yet.</p>
+                )}
+              </div>
+
               <div className="mt-auto flex items-center justify-between gap-3 border-t border-line/70 pt-4">
                 <div className="flex items-center gap-2">
                   <AvatarStack
@@ -80,21 +101,6 @@ export default async function TeamsPage() {
                     {team.memberCount} {team.memberCount === 1 ? "person" : "people"}
                   </span>
                 </div>
-                {team.lead ? (
-                  <span className="inline-flex items-center gap-1.5 text-[11px]">
-                    <Crown className="h-3 w-3 text-warning" />
-                    <UserAvatar
-                      name={team.lead.name}
-                      src={team.lead.avatarUrl}
-                      className="h-5 w-5"
-                    />
-                    <span className="max-w-[88px] truncate font-medium text-ink/75">
-                      {team.lead.name}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-muted">No lead assigned</span>
-                )}
               </div>
             </section>
           ))}

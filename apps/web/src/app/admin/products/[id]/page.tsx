@@ -38,6 +38,7 @@ import {
   ProductMilestones,
   currentStageGateReadiness,
 } from "@/components/shared/milestone-list";
+import { ProductTeam } from "@/components/shared/product-team";
 import { EditProductDialog } from "@/components/admin/product-form";
 import {
   GatePendingSummary,
@@ -92,6 +93,16 @@ export default async function ProductDetailPage({
   const currentMilestones = product.milestones.filter(
     (milestone) => milestone.stage === product.stage,
   );
+  const rosterOwners = [
+    ...product.members.map((member) => ({
+      id: member.id,
+      name: member.name,
+      avatarUrl: member.avatarUrl,
+    })),
+    ...(product.members.some((member) => member.id === product.owner.id)
+      ? []
+      : [{ id: product.owner.id, name: product.owner.name, avatarUrl: product.owner.avatarUrl }]),
+  ];
   const readiness = currentStageGateReadiness(
     product.milestones,
     product.stage,
@@ -266,6 +277,13 @@ export default async function ProductDetailPage({
             </dl>
           </section>
 
+          <ProductTeam
+            productId={product.id}
+            initialMembers={product.members}
+            owner={product.owner}
+            canManage={canEdit}
+          />
+
           <section className="surface-card p-5 sm:p-6">
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
               <div>
@@ -292,7 +310,7 @@ export default async function ProductDetailPage({
               currentStage={stageMeta}
               productId={product.id}
               canManage={canManageMilestones}
-              owners={meta?.owners ?? []}
+              owners={rosterOwners}
               locked={product.latestGateStatus === "PENDING_APPROVAL"}
             />
           </section>

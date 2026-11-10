@@ -15,6 +15,8 @@ import {
   ProductListItem,
   PublicProductDetail,
   PublicProductListItem,
+  ProductMemberRef,
+  RosterCandidate,
   stageLabel,
 } from "@ims/shared";
 import { PrismaService } from "../../common/prisma.service";
@@ -23,6 +25,7 @@ import { AuditService } from "../audit/audit.service";
 import {
   SetMilestoneStatusDto,
   CreateMilestoneDto,
+  AddProductMemberDto,
   CreateProductDto,
   ListMilestonesDto,
   ListProductsDto,
@@ -58,6 +61,23 @@ const productDetailInclude = {
   createdBy: { select: { id: true, name: true, avatarUrl: true } },
   idea: { select: { id: true, title: true, status: true } },
   visibilityTeams: { select: { teamId: true } },
+  members: {
+    orderBy: { addedAt: "asc" as const },
+    include: {
+      user: {
+        select: {
+          id: true,
+          name: true,
+          email: true,
+          title: true,
+          avatarUrl: true,
+          role: { select: { code: true, name: true } },
+          teams: { include: { team: { select: { id: true, name: true } } } },
+        },
+      },
+      addedBy: { select: { id: true, name: true } },
+    },
+  },
   milestones: {
     orderBy: [{ stage: "asc" as const }, { sortOrder: "asc" as const }],
     include: {
@@ -98,6 +118,8 @@ type MilestoneWithPeople = Prisma.MilestoneGetPayload<{
 
 type ProductWithList = Prisma.ProductGetPayload<{ include: typeof productListInclude }>;
 type ProductWithDetail = Prisma.ProductGetPayload<{ include: typeof productDetailInclude }>;
+type ProductMembershipRow = ProductWithDetail["members"][number];
+type RosterCandidateRow = ProductMembershipRow["user"];
 type ProductWithPublicDetail = Prisma.ProductGetPayload<{
   include: typeof publicDetailInclude;
 }>;
@@ -482,7 +504,7 @@ export class ProductsService {
 
     const stage = dto.stage as LifecycleStage;
     await this.assertMilestoneStage(id, product.stage, stage);
-    if (dto.ownerId) await this.assertMilestoneOwner(dto.ownerId);
+    if (dto.ownerId) await this.assertMilestoneOwner(dto.ownerId, product);
 
     const last = await this.prisma.milestone.aggregate({
       where: { productId: id, stage },
@@ -546,7 +568,8 @@ export class ProductsService {
     if (!milestone) throw new NotFoundException("Milestone not found");
 
     await this.assertMilestoneStage(id, product.stage, milestone.stage);
-    if (dto.ownerId) await this.assertMilestoneOwner(dto.ownerId);
+    if (dto.ownerId)
+      await this.assertMilestoneOwner(dto.ownerId, product, milestone.ownerId);
 
     const frozen =
       milestone.status === "COMPLETED" || milestone.status === "BLOCKED";
@@ -889,6 +912,148 @@ export class ProductsService {
     return { success: true };
   }
 
+  async listMembers(id: string, user: AuthUser) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      include: { members: productDetailInclude.members },
+    });
+    if (!product) throw new NotFoundException("Product not found");
+    this.assertViewAccess(product.ownerId, user);
+    return product.members.map((membership) => this.mapMember(membership));
+  }
+
+  async memberCandidates(id: string, user: AuthUser) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true, ownerId: true, members: { select: { userId: true } } },
+    });
+    if (!product) throw new NotFoundException("Product not found");
+    this.assertViewAccess(product.ownerId, user);
+
+    const exclude = new Set(product.members.map((member) => member.userId));
+    // The delivery roster is developers only. The product owner is a separate
+    // role and is never added to the roster; it stays selectable as a milestone
+    // owner through the product's owner link, not membership.
+    const people = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        deletedAt: null,
+        role: { code: "DEVELOPER" },
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        title: true,
+        avatarUrl: true,
+        role: { select: { code: true, name: true } },
+        teams: { include: { team: { select: { id: true, name: true } } } },
+      },
+      orderBy: [{ role: { name: "asc" } }, { name: "asc" }],
+    });
+
+    return people
+      .filter((person) => !exclude.has(person.id))
+      .map((person) => this.mapCandidate(person));
+  }
+
+  async addMember(id: string, dto: AddProductMemberDto, user: AuthUser) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true, name: true, ownerId: true },
+    });
+    if (!product) throw new NotFoundException("Product not found");
+    this.assertManageAccess(product.ownerId, user);
+
+    const person = await this.prisma.user.findFirst({
+      where: { id: dto.userId, isActive: true, deletedAt: null },
+      select: { id: true, name: true, role: { select: { code: true } } },
+    });
+    if (!person) throw new BadRequestException("Choose an active person to add");
+    if (person.role.code !== "DEVELOPER") {
+      throw new BadRequestException(
+        `${person.name} isn't a developer. The delivery team holds developers only; the product owner is set separately.`,
+      );
+    }
+
+    const existing = await this.prisma.productMember.findUnique({
+      where: { productId_userId: { productId: id, userId: person.id } },
+    });
+    if (existing) {
+      throw new BadRequestException(`${person.name} is already on this team`);
+    }
+
+    await this.prisma.productMember.create({
+      data: { productId: id, userId: person.id, addedById: user.id },
+    });
+
+    await this.audit.record({
+      actorId: user.id,
+      action: "product.member_added",
+      entityType: "Product",
+      entityId: id,
+      summary: `Added ${person.name} to the ${product.name} team`,
+      after: { member: person.name, memberUserId: person.id },
+      metadata: { productId: id, productName: product.name },
+    });
+
+    const updated = await this.prisma.product.findUnique({
+      where: { id },
+      include: productDetailInclude,
+    });
+    return this.mapDetail(updated!);
+  }
+
+  async removeMember(id: string, userId: string, user: AuthUser) {
+    const product = await this.prisma.product.findUnique({
+      where: { id },
+      select: { id: true, name: true, ownerId: true },
+    });
+    if (!product) throw new NotFoundException("Product not found");
+    this.assertManageAccess(product.ownerId, user);
+
+    const membership = await this.prisma.productMember.findUnique({
+      where: { productId_userId: { productId: id, userId } },
+      include: { user: { select: { id: true, name: true } } },
+    });
+    if (!membership) throw new NotFoundException("That person is not on this team");
+
+    // Reassign any milestone this person owns back to unassigned so delivery stays honest.
+    const ownedMilestones = await this.prisma.milestone.count({
+      where: { productId: id, ownerId: userId },
+    });
+
+    await this.prisma.$transaction([
+      this.prisma.milestone.updateMany({
+        where: { productId: id, ownerId: userId },
+        data: { ownerId: null },
+      }),
+      this.prisma.productMember.delete({
+        where: { productId_userId: { productId: id, userId } },
+      }),
+    ]);
+
+    await this.audit.record({
+      actorId: user.id,
+      action: "product.member_removed",
+      entityType: "Product",
+      entityId: id,
+      summary: `Removed ${membership.user.name} from the ${product.name} team`,
+      before: { member: membership.user.name, memberUserId: userId },
+      metadata: {
+        productId: id,
+        productName: product.name,
+        milestonesUnassigned: ownedMilestones,
+      },
+    });
+
+    const updated = await this.prisma.product.findUnique({
+      where: { id },
+      include: productDetailInclude,
+    });
+    return this.mapDetail(updated!);
+  }
+
   async publicPortfolio(): Promise<PublicPortfolio> {
     const products = await this.prisma.product.findMany({
       where: { isArchived: false, visibility: "EVERYONE" },
@@ -965,6 +1130,7 @@ export class ProductsService {
         Math.floor((Date.now() - stageEntered.getTime()) / 86_400_000),
       ),
       visibilityTeamIds: [],
+      members: [],
       idea: null,
       createdBy: detail.createdBy
         ? {
@@ -1031,6 +1197,7 @@ export class ProductsService {
             avatarUrl: product.createdBy.avatarUrl,
           }
         : null,
+      members: product.members.map((membership) => this.mapMember(membership)),
       milestones: product.milestones.map((milestone) =>
         this.mapMilestone(milestone),
       ),
@@ -1074,6 +1241,36 @@ export class ProductsService {
     };
   }
 
+  private mapMember(membership: ProductMembershipRow): ProductMemberRef {
+    return {
+      id: membership.user.id,
+      name: membership.user.name,
+      email: membership.user.email,
+      title: membership.user.title,
+      avatarUrl: membership.user.avatarUrl,
+      role: membership.user.role.code,
+      roleLabel: membership.user.role.name,
+      teams: membership.user.teams.map((entry) => entry.team),
+      addedAt: membership.addedAt.toISOString(),
+      addedBy: membership.addedBy
+        ? { id: membership.addedBy.id, name: membership.addedBy.name }
+        : null,
+    };
+  }
+
+  private mapCandidate(person: RosterCandidateRow): RosterCandidate {
+    return {
+      id: person.id,
+      name: person.name,
+      email: person.email,
+      title: person.title,
+      avatarUrl: person.avatarUrl,
+      role: person.role.code,
+      roleLabel: person.role.name,
+      teams: person.teams.map((entry) => entry.team),
+    };
+  }
+
   private async assertMilestoneStage(
     productId: string,
     currentStage: LifecycleStage,
@@ -1098,12 +1295,31 @@ export class ProductsService {
     }
   }
 
-  private async assertMilestoneOwner(ownerId: string) {
+  private async assertMilestoneOwner(
+    ownerId: string,
+    product: { id: string; ownerId: string },
+    currentOwnerId?: string | null,
+  ) {
+    // Keeping the owner already on the milestone is always allowed (no data regressions).
+    if (currentOwnerId && ownerId === currentOwnerId) return;
+
     const owner = await this.prisma.user.findFirst({
       where: { id: ownerId, isActive: true, deletedAt: null },
-      select: { id: true },
+      select: { id: true, name: true },
     });
     if (!owner) throw new BadRequestException("Choose an active milestone owner");
+
+    if (ownerId === product.ownerId) return;
+
+    const onRoster = await this.prisma.productMember.findUnique({
+      where: { productId_userId: { productId: product.id, userId: ownerId } },
+      select: { userId: true },
+    });
+    if (!onRoster) {
+      throw new BadRequestException(
+        `${owner.name} isn't on this product's team. Add them under Team first, then assign the milestone.`,
+      );
+    }
   }
 
   private accessWhere(user: AuthUser): Prisma.ProductWhereInput {

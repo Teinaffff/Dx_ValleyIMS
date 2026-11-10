@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import {
   ROLE_CODES,
   ROLE_LABELS,
+  teamsForRole,
   userCreateSchema,
   type RoleCode,
   type TeamRef,
@@ -31,6 +32,8 @@ const ROLE_DESCRIPTIONS: Record<RoleCode, string> = {
   ADMIN: "Full governance access, every product and system configuration.",
   EVALUATOR: "Reviews assigned stage gates and leaves independent decisions.",
   PRODUCT_OWNER: "Owns products, milestones and stage-gate submissions.",
+  DEVELOPER:
+    "Recorded for rostering and milestone ownership. No portal sign-in; a team assignment is enough.",
 };
 
 function CreateUserForm({
@@ -58,19 +61,32 @@ function CreateUserForm({
 
   const role = form.watch("role");
 
+  React.useEffect(() => {
+    const allowed = new Set(teamsForRole(teams, role).map((team) => team.id));
+    const current = form.getValues("teamIds") ?? [];
+    const next = current.filter((id) => allowed.has(id));
+    if (next.length !== current.length) form.setValue("teamIds", next);
+  }, [role, teams, form]);
+
   const onSubmit = form.handleSubmit(async (values) => {
     setSubmitting(true);
     setError(null);
+    const isDeveloper = values.role === "DEVELOPER";
     try {
       const created = await apiFetch<{ name: string }>("/api/users", {
         method: "POST",
         body: JSON.stringify({
           ...values,
           title: values.title || undefined,
+          password: isDeveloper ? undefined : values.password,
           teamIds: values.teamIds ?? [],
         }),
       });
-      toast.success(`${created.name} can now sign in`);
+      toast.success(
+        isDeveloper
+          ? `${created.name} is on the roster`
+          : `${created.name} can now sign in`,
+      );
       onDone();
     } catch (requestError) {
       setError(
@@ -121,33 +137,40 @@ function CreateUserForm({
           </Select>
         </Field>
 
-        <Field
-          label="Temporary password"
-          hint="At least 8 characters. Share it through a secure channel."
-          error={form.formState.errors.password?.message}
-        >
-          <div className="relative">
-            <Input
-              type={showPassword ? "text" : "password"}
-              placeholder="Set an initial password"
-              autoComplete="new-password"
-              className="pr-12"
-              {...form.register("password")}
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword((visible) => !visible)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted transition hover:text-ink"
-              aria-label={showPassword ? "Hide password" : "Show password"}
-            >
-              {showPassword ? (
-                <EyeOff className="h-4 w-4" />
-              ) : (
-                <Eye className="h-4 w-4" />
-              )}
-            </button>
+        {role === "DEVELOPER" ? (
+          <div className="self-end rounded-2xl border border-line bg-canvas/60 px-4 py-3 text-[11px] leading-snug text-muted">
+            <span className="font-semibold text-ink/75">No sign-in issued.</span>{" "}
+            Developers are recorded for product rosters and milestone ownership only.
           </div>
-        </Field>
+        ) : (
+          <Field
+            label="Temporary password"
+            hint="At least 8 characters. Share it through a secure channel."
+            error={form.formState.errors.password?.message}
+          >
+            <div className="relative">
+              <Input
+                type={showPassword ? "text" : "password"}
+                placeholder="Set an initial password"
+                autoComplete="new-password"
+                className="pr-12"
+                {...form.register("password")}
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted transition hover:text-ink"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? (
+                  <EyeOff className="h-4 w-4" />
+                ) : (
+                  <Eye className="h-4 w-4" />
+                )}
+              </button>
+            </div>
+          </Field>
+        )}
 
         <div className="self-end rounded-2xl bg-canvas/60 px-4 py-3">
           <p className="text-[11px] font-semibold text-ink/75">
@@ -161,7 +184,7 @@ function CreateUserForm({
         <div className="sm:col-span-2">
           <p className="mb-2 text-xs font-semibold text-ink/75">Teams</p>
           <div className="flex flex-wrap gap-2">
-            {teams.map((team) => {
+            {teamsForRole(teams, role).map((team) => {
               const selected = (form.watch("teamIds") ?? []).includes(team.id);
               return (
                 <button

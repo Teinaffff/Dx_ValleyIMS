@@ -10,6 +10,7 @@ import { toast } from "sonner";
 import {
   LIFECYCLE_STAGES,
   productCreateSchema,
+  teamsForRole,
   type ProductCreateInput,
   type ProductDetail,
   type TeamRef,
@@ -163,7 +164,7 @@ function ProductForm({
             Development teams
           </p>
           <div className="flex flex-wrap gap-2">
-            {teams.map((team) => {
+            {teamsForRole(teams, "DEVELOPER").map((team) => {
               const selected = selectedTeamIds.includes(team.id);
               return (
                 <button

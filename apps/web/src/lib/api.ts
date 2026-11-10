@@ -33,7 +33,10 @@ export async function apiFetch<T>(
       credentials: "include",
       ...init,
       headers: {
-        ...(init?.body ? { "Content-Type": "application/json" } : {}),
+        // Let the browser set the multipart boundary for file uploads.
+        ...(init?.body && !(init.body instanceof FormData)
+          ? { "Content-Type": "application/json" }
+          : {}),
         ...(init?.headers ?? {}),
       },
     });

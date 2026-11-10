@@ -82,4 +82,7 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.IDEA_CREATE,
     PERMISSIONS.NOTIFICATION_VIEW,
   ],
+  // Developers are recorded for rostering and milestone ownership only. They have
+  // no portal permissions and are blocked from signing in at the auth layer.
+  DEVELOPER: [],
 };

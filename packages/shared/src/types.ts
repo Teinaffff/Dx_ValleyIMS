@@ -34,14 +34,27 @@ export interface TeamRef {
   description?: string | null;
 }
 
+// Developers belong to the developer groups (AI, Platform, Payment, Integration).
+// Every other role (product owner, evaluator, admin) belongs to the Products team.
+export const PRODUCTS_TEAM_NAME = "Products";
+
+export function isProductsTeam(name: string): boolean {
+  return name.trim().toLowerCase() === PRODUCTS_TEAM_NAME.toLowerCase();
+}
+
+export function teamsForRole<T extends TeamRef>(teams: T[], role: RoleCode): T[] {
+  if (role === "DEVELOPER") return teams.filter((team) => !isProductsTeam(team.name));
+  return teams.filter((team) => isProductsTeam(team.name));
+}
+
 export interface TeamSummary {
   id: string;
   name: string;
   description: string | null;
-  lead: UserRef | null;
   memberCount: number;
   productCount: number;
   members: UserRef[];
+  products: { id: string; name: string; slug: string; stage: string }[];
   createdAt: string;
 }
 
@@ -123,11 +136,79 @@ export interface ProductDetail extends ProductListItem {
   launchTarget: string | null;
   visibilityTeamIds: string[];
   createdBy: UserRef | null;
+  members: ProductMemberRef[];
   milestones: MilestoneDto[];
   stageHistory: StageHistoryDto[];
   currentStageEnteredAt: string | null;
   latestGateStatus: GateStatus | null;
   idea: { id: string; title: string; status: IdeaStatus } | null;
+}
+
+// A person on a product's delivery roster. Developers are recorded here and can
+// own milestones, but they have no portal access of their own.
+export interface ProductMemberRef {
+  id: string;
+  name: string;
+  email: string;
+  title: string | null;
+  avatarUrl: string | null;
+  role: RoleCode;
+  roleLabel: string;
+  teams: TeamRef[];
+  addedAt: string;
+  addedBy: { id: string; name: string } | null;
+}
+
+// A person who can still be added to a product's roster (active, not yet a member).
+export interface RosterCandidate {
+  id: string;
+  name: string;
+  email: string;
+  title: string | null;
+  avatarUrl: string | null;
+  role: RoleCode;
+  roleLabel: string;
+  teams: TeamRef[];
+}
+
+// Bulk developer registration (CSV / Excel import).
+export type ImportRowStatus = "new" | "duplicate" | "unknown_team" | "invalid";
+
+export interface ImportPreviewRow {
+  index: number;
+  name: string;
+  email: string;
+  title: string | null;
+  team: string | null;
+  status: ImportRowStatus;
+  reasons: string[];
+}
+
+export interface ImportPreviewResult {
+  rows: ImportPreviewRow[];
+  counts: {
+    total: number;
+    new: number;
+    duplicate: number;
+    unknownTeam: number;
+    invalid: number;
+  };
+  teams: TeamRef[];
+  fileName: string;
+  truncated: boolean;
+}
+
+export interface ImportCommitRow {
+  name: string;
+  email: string;
+  title?: string | null;
+  team?: string | null;
+}
+
+export interface ImportCommitResult {
+  created: { name: string; email: string; team: string | null }[];
+  skipped: { email: string; reason: string }[];
+  counts: { created: number; skipped: number };
 }
 
 export interface ProductListResult {
@@ -282,6 +363,16 @@ export interface PublicPortfolio {
   };
 }
 
+export type IdeaAttachmentKind = "IMAGE" | "VIDEO" | "AUDIO" | "DOCUMENT";
+
+export interface IdeaAttachmentRef {
+  id: string;
+  kind: IdeaAttachmentKind;
+  fileName: string;
+  mimeType: string;
+  size: number;
+}
+
 export interface IdeaInboxItem {
   id: string;
   reference: string;
@@ -289,6 +380,7 @@ export interface IdeaInboxItem {
   problem: string;
   solution: string;
   expectedImpact: string | null;
+  attachments: IdeaAttachmentRef[];
   status: IdeaStatus;
   submitter: {
     name: string;

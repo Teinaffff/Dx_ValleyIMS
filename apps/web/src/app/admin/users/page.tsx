@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { UserAvatar } from "@/components/ui/avatar";
 import { EmptyState } from "@/components/ui/empty-state";
 import { CreateUserDialog } from "@/components/admin/user-form";
+import { ImportDevelopersDialog } from "@/components/admin/import-developers-dialog";
 import { UserActions } from "@/components/admin/user-actions";
 import { formatDate } from "@/lib/format";
 
@@ -17,6 +18,7 @@ const roleTone: Record<string, string> = {
   ADMIN: "bg-ink text-white",
   EVALUATOR: "bg-soft text-ink/60",
   PRODUCT_OWNER: "bg-primary-soft text-primary",
+  DEVELOPER: "bg-canvas text-ink/50 ring-1 ring-inset ring-line",
 };
 
 export default async function UsersPage({
@@ -45,8 +47,9 @@ export default async function UsersPage({
     : directory;
 
   const canManage = session?.permissions.includes(PERMISSIONS.USER_MANAGE) ?? false;
-  const active = users?.filter((user) => user.isActive).length ?? 0;
-  const owners = users?.filter((user) => user.role === "PRODUCT_OWNER").length ?? 0;
+  const portalUsers =
+    users?.filter((user) => user.isActive && user.role !== "DEVELOPER").length ?? 0;
+  const developerCount = users?.filter((user) => user.role === "DEVELOPER").length ?? 0;
   const activeAdminCount =
     users?.filter((user) => user.role === "ADMIN" && user.isActive).length ?? 0;
   const viewerId = session?.id ?? "";
@@ -57,14 +60,21 @@ export default async function UsersPage({
         eyebrow="Governance"
         title="People & access"
         description="Everyone who can shape, review or explore the innovation portfolio. Roles are enforced by the API, not just the interface."
-        actions={canManage ? <CreateUserDialog teams={teams ?? []} /> : null}
+        actions={
+          canManage ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <ImportDevelopersDialog teams={teams ?? []} />
+              <CreateUserDialog teams={teams ?? []} />
+            </div>
+          ) : null
+        }
       />
 
       <div className="grid gap-3 sm:grid-cols-3">
         {[
           { label: "People", value: users?.length ?? 0, helper: "Accounts in the workspace" },
-          { label: "Active", value: active, helper: "Can sign in today" },
-          { label: "Product owners", value: owners, helper: "Accountable for delivery" },
+          { label: "Portal users", value: portalUsers, helper: "Can sign in today" },
+          { label: "Developers", value: developerCount, helper: "Roster only, no sign-in" },
         ].map((stat) => (
           <div key={stat.label} className="surface-card p-5">
             <p className="text-[11px] font-medium text-muted">{stat.label}</p>

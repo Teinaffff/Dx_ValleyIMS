@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   Patch,
   Post,
@@ -13,6 +14,7 @@ import { ProductsService } from "./products.service";
 import {
   SetMilestoneStatusDto,
   CreateMilestoneDto,
+  AddProductMemberDto,
   CreateProductDto,
   ListMilestonesDto,
   ListProductsDto,
@@ -156,5 +158,38 @@ export class ProductsController {
   @RequirePermissions(PERMISSIONS.PRODUCT_VIEW_ALL, PERMISSIONS.PRODUCT_VIEW_OWN)
   history(@Param("id") id: string, @CurrentUser() user: AuthUser) {
     return this.productsService.history(id, user);
+  }
+
+  @Get(":id/members")
+  @RequirePermissions(PERMISSIONS.PRODUCT_VIEW_ALL, PERMISSIONS.PRODUCT_VIEW_OWN)
+  listMembers(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.productsService.listMembers(id, user);
+  }
+
+  @Get(":id/members/candidates")
+  @RequirePermissions(PERMISSIONS.PRODUCT_VIEW_ALL, PERMISSIONS.PRODUCT_VIEW_OWN)
+  memberCandidates(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.productsService.memberCandidates(id, user);
+  }
+
+  @Post(":id/members")
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  addMember(
+    @Param("id") id: string,
+    @Body() dto: AddProductMemberDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.productsService.addMember(id, dto, user);
+  }
+
+  @Delete(":id/members/:userId")
+  @RequirePermissions(PERMISSIONS.PRODUCT_UPDATE)
+  removeMember(
+    @Param("id") id: string,
+    @Param("userId") userId: string,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.productsService.removeMember(id, userId, user);
   }
 }

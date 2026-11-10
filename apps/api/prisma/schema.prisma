@@ -96,6 +96,7 @@ enum RoleCode {
   ADMIN
   EVALUATOR
   PRODUCT_OWNER
+  DEVELOPER
 }
 
 model User {
@@ -114,6 +115,8 @@ model User {
 
   productsOwned     Product[]  @relation("ProductOwner")
   productsCreated   Product[]  @relation("ProductCreator")
+  productMemberships ProductMember[]
+  membersAdded      ProductMember[] @relation("ProductMemberAdder")
   productsStatusChanged Product[] @relation("ProductStatusChanger")
   productEvaluations ProductEvaluator[]
   productReviews    ProductReview[]
@@ -232,6 +235,7 @@ model Product {
   milestones      Milestone[]
   visibilityTeams ProductVisibilityTeam[]
   teams           ProductTeam[]
+  members         ProductMember[]
   evaluators      ProductEvaluator[]
   reviews         ProductReview[]
   stageHistory    StageHistory[]
@@ -293,6 +297,19 @@ model ProductTeam {
 
   @@id([productId, teamId])
   @@index([teamId])
+}
+
+model ProductMember {
+  productId  String
+  userId     String
+  addedById  String?
+  addedAt    DateTime @default(now())
+  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedBy    User?   @relation("ProductMemberAdder", fields: [addedById], references: [id])
+
+  @@id([productId, userId])
+  @@index([userId])
 }
 
 model Milestone {
@@ -440,12 +457,37 @@ model Idea {
   internalNotes      String?
   clarificationNote  String?
   convertedProduct   Product?
+  attachments        IdeaAttachment[]
   createdAt          DateTime   @default(now())
   updatedAt          DateTime   @updatedAt
 
   @@index([status])
   @@index([submittedById])
   @@index([createdAt])
+}
+
+enum AttachmentKind {
+  IMAGE
+  VIDEO
+  AUDIO
+  DOCUMENT
+}
+
+// Files submitted with an idea (voice notes, screenshots, short videos,
+// documents). The bytes live in Postgres so no separate file store is needed;
+// list queries must never select `data`.
+model IdeaAttachment {
+  id        String         @id @default(cuid())
+  ideaId    String
+  idea      Idea           @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  kind      AttachmentKind
+  fileName  String
+  mimeType  String
+  size      Int
+  data      Bytes
+  createdAt DateTime       @default(now())
+
+  @@index([ideaId])
 }
 
 model InnovationChallenge {

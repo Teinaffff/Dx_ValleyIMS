@@ -17,7 +17,9 @@ const teamInclude = {
     },
     orderBy: { isLead: "desc" as const },
   },
-  _count: { select: { products: true } },
+  productTeams: {
+    include: { product: { select: { id: true, name: true, slug: true, stage: true } } },
+  },
 } satisfies Prisma.TeamInclude;
 
 type TeamWithRelations = Prisma.TeamGetPayload<{ include: typeof teamInclude }>;
@@ -35,7 +37,28 @@ export class TeamsService {
       include: teamInclude,
       orderBy: { name: "asc" },
     });
-    return teams.map((team) => this.mapTeam(team));
+    const mapped = teams.map((team) => this.mapTeam(team));
+
+    // The Products team is not attached to products directly: it is involved in
+    // every product that one of its members owns or sits on the product team of.
+    for (const team of mapped) {
+      if (team.name.trim().toLowerCase() !== "products") continue;
+      const memberIds = team.members.map((member) => member.id);
+      if (!memberIds.length) continue;
+      const products = await this.prisma.product.findMany({
+        where: {
+          OR: [
+            { ownerId: { in: memberIds } },
+            { members: { some: { userId: { in: memberIds } } } },
+          ],
+        },
+        select: { id: true, name: true, slug: true, stage: true },
+        orderBy: { name: "asc" },
+      });
+      team.products = products;
+      team.productCount = products.length;
+    }
+    return mapped;
   }
 
   async create(dto: CreateTeamDto, actorId: string) {
@@ -161,9 +184,11 @@ export class TeamsService {
       id: team.id,
       name: team.name,
       description: team.description,
-      lead: team.lead,
       memberCount: team.members.length,
-      productCount: team._count.products,
+      productCount: team.productTeams.length,
+      products: team.productTeams
+        .map((entry) => entry.product)
+        .sort((a, b) => a.name.localeCompare(b.name)),
       members: team.members.map((membership) => membership.user),
       createdAt: team.createdAt.toISOString(),
     };

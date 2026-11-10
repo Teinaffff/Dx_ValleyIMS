@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { IdeaStatus, Prisma, RoleCode } from "@prisma/client";
+import { validateFiles } from "./attachments";
 import type { AuthUser } from "../../common/auth-user";
 import { PrismaService } from "../../common/prisma.service";
 import { AuditService } from "../audit/audit.service";
@@ -36,6 +37,11 @@ const ideaInclude = {
   approvedBy: { select: { id: true, name: true } },
   deletedBy: { select: { id: true, name: true } },
   convertedProduct: { select: { id: true, name: true } },
+  // Metadata only: the file bytes are streamed from their own endpoint.
+  attachments: {
+    select: { id: true, kind: true, fileName: true, mimeType: true, size: true },
+    orderBy: { createdAt: "asc" as const },
+  },
 } satisfies Prisma.IdeaInclude;
 
 type IdeaWithPeople = Prisma.IdeaGetPayload<{ include: typeof ideaInclude }>;
@@ -56,6 +62,7 @@ function toInboxItem(idea: IdeaWithPeople) {
       jobTitle: idea.submitterTitle ?? idea.submittedBy?.title ?? null,
       accountId: idea.submittedBy?.id ?? null,
     },
+    attachments: idea.attachments,
     reviewNote: idea.reviewNote,
     deleteReason: idea.deleteReason,
     reviewedBy: reviewer ? { id: reviewer.id, name: reviewer.name } : null,
@@ -74,15 +81,41 @@ export class IdeasService {
     private readonly products: ProductsService,
   ) {}
 
-  async submitPublic(dto: CreatePublicIdeaDto) {
+  async submitPublic(dto: CreatePublicIdeaDto, uploads: Express.Multer.File[] = []) {
     const name = dto.name.trim();
     const email = dto.email.trim().toLowerCase();
     const title = dto.title.trim();
-    const problem = dto.problem.trim();
-    const solution = dto.solution.trim();
+    const problem = dto.problem?.trim() ?? "";
+    const solution = dto.solution?.trim() ?? "";
+    const files = validateFiles(uploads);
+
+    // Writing is only mandatory when nothing else explains the idea.
+    if (!files.length) {
+      if (problem.length < 20) {
+        throw new BadRequestException(
+          "Describe the problem in at least 20 characters, or attach a voice note, video, image or document.",
+        );
+      }
+      if (solution.length < 20) {
+        throw new BadRequestException(
+          "Describe your proposed solution in at least 20 characters, or attach a voice note, video, image or document.",
+        );
+      }
+    }
 
     const idea = await this.prisma.idea.create({
       data: {
+        attachments: files.length
+          ? {
+              create: files.map((file) => ({
+                kind: file.kind,
+                fileName: file.fileName,
+                mimeType: file.mimeType,
+                size: file.size,
+                data: new Uint8Array(file.data),
+              })),
+            }
+          : undefined,
         title,
         problem,
         solution,
@@ -109,7 +142,11 @@ export class IdeasService {
           userId: admin.id,
           type: "idea.submitted",
           title: `New idea: ${title}`,
-          body: `${name} shared an idea. ${excerpt(problem)}`,
+          body: `${name} shared an idea. ${
+            problem
+              ? excerpt(problem)
+              : `${files.length} attachment${files.length === 1 ? "" : "s"} included.`
+          }`,
           link: "/admin/ideas",
         })),
       });
@@ -121,13 +158,21 @@ export class IdeasService {
       entityType: "Idea",
       entityId: idea.id,
       summary: `New anonymous idea submitted: ${title}`,
-      metadata: { source: "public", submitterEmail: email },
+      metadata: { source: "public", submitterEmail: email, attachments: files.length },
     });
 
     return {
       id: idea.id,
       reference: idea.id.slice(-8).toUpperCase(),
     };
+  }
+
+  async attachment(ideaId: string, attachmentId: string) {
+    const file = await this.prisma.ideaAttachment.findFirst({
+      where: { id: attachmentId, ideaId },
+    });
+    if (!file) throw new NotFoundException("Attachment not found.");
+    return file;
   }
 
   async list(query: ListIdeasDto) {

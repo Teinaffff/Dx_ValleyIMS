@@ -16,6 +16,7 @@ import { toast } from "sonner";
 import {
   ROLE_CODES,
   ROLE_LABELS,
+  teamsForRole,
   userUpdateSchema,
   type TeamRef,
   type UserSummary,
@@ -74,6 +75,15 @@ function EditUserDialog({
     resolver: zodResolver(userUpdateSchema),
     defaultValues: formValues(user),
   });
+
+  const role = form.watch("role");
+
+  React.useEffect(() => {
+    const allowed = new Set(teamsForRole(teams, role).map((team) => team.id));
+    const current = form.getValues("teamIds") ?? [];
+    const next = current.filter((id) => allowed.has(id));
+    if (next.length !== current.length) form.setValue("teamIds", next);
+  }, [role, teams, form]);
 
   React.useEffect(() => {
     if (open) {
@@ -159,7 +169,7 @@ function EditUserDialog({
             <div className="sm:col-span-2">
               <p className="mb-2 text-xs font-semibold text-ink/75">Teams</p>
               <div className="flex flex-wrap gap-2">
-                {teams.map((team) => {
+                {teamsForRole(teams, role).map((team) => {
                   const selected = (form.watch("teamIds") ?? []).includes(team.id);
                   return (
                     <button

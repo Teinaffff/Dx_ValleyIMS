@@ -118,13 +118,14 @@ export type IdeaStatus = (typeof IDEA_STATUSES)[number];
 export const PRODUCT_STATUSES = ["ACTIVE", "PARKED", "REJECTED"] as const;
 export type ProductStatus = (typeof PRODUCT_STATUSES)[number];
 
-export const ROLE_CODES = ["ADMIN", "EVALUATOR", "PRODUCT_OWNER"] as const;
+export const ROLE_CODES = ["ADMIN", "EVALUATOR", "PRODUCT_OWNER", "DEVELOPER"] as const;
 export type RoleCode = (typeof ROLE_CODES)[number];
 
 export const ROLE_LABELS: Record<RoleCode, string> = {
   ADMIN: "System Administrator",
   EVALUATOR: "Innovation Evaluator",
   PRODUCT_OWNER: "Product Owner",
+  DEVELOPER: "Developer",
 };
 
 export const HEALTH_LABELS: Record<ProductHealth, string> = {

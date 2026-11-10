@@ -12,11 +12,13 @@ import {
 import { apiFetch, ApiError } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Field, Input, Textarea } from "@/components/ui/input";
+import { AttachmentPicker } from "@/components/portal/attachment-picker";
 
 export function PublicIdeaForm() {
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [reference, setReference] = React.useState<string | null>(null);
+  const [files, setFiles] = React.useState<File[]>([]);
 
   const form = useForm<PublicIdeaCreateInput>({
     resolver: zodResolver(publicIdeaCreateSchema),
@@ -32,15 +34,37 @@ export function PublicIdeaForm() {
   });
 
   const onSubmit = form.handleSubmit(async (values) => {
-    setSubmitting(true);
     setError(null);
+
+    // Writing is only required when there is no voice note, video, image or file.
+    if (!files.length) {
+      let blocked = false;
+      for (const key of ["problem", "solution"] as const) {
+        if (values[key].length < 20) {
+          form.setError(key, {
+            message: "Write at least 20 characters, or add a voice note, video, image or document.",
+          });
+          blocked = true;
+        }
+      }
+      if (blocked) return;
+    }
+
+    setSubmitting(true);
     try {
+      const body = new FormData();
+      for (const [key, value] of Object.entries(values)) {
+        if (typeof value === "string" && value) body.append(key, value);
+      }
+      for (const file of files) body.append("files", file, file.name);
+
       const result = await apiFetch<{ reference: string }>("/api/public/ideas", {
         method: "POST",
-        body: JSON.stringify(values),
+        body,
       });
       setReference(result.reference);
       form.reset();
+      setFiles([]);
     } catch (requestError) {
       setError(
         requestError instanceof ApiError
@@ -129,6 +153,8 @@ export function PublicIdeaForm() {
             {...form.register("title")}
           />
         </Field>
+
+        <AttachmentPicker files={files} onChange={setFiles} />
 
         <Field
           label="The problem you have noticed"

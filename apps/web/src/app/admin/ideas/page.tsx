@@ -24,6 +24,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { IdeaActions } from "@/components/admin/idea-actions";
+import { IdeaAttachments } from "@/components/admin/idea-attachments";
 import { ConvertIdeaDialog } from "@/components/admin/product-form";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
@@ -373,7 +374,7 @@ export default async function IdeasPage({
                     The problem
                   </p>
                   <p className="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-ink/75">
-                    {idea.problem}
+                    {idea.problem || "Not written out. See the attachments below."}
                   </p>
                 </div>
                 <div className="rounded-2xl bg-canvas/60 p-4">
@@ -381,10 +382,14 @@ export default async function IdeasPage({
                     Proposed solution
                   </p>
                   <p className="mt-1.5 whitespace-pre-line text-[12px] leading-relaxed text-ink/75">
-                    {idea.solution}
+                    {idea.solution || "Not written out. See the attachments below."}
                   </p>
                 </div>
               </div>
+
+              {idea.attachments.length ? (
+                <IdeaAttachments ideaId={idea.id} attachments={idea.attachments} />
+              ) : null}
 
               {idea.expectedImpact ? (
                 <div className="mt-3 rounded-2xl border border-line/70 px-4 py-3">

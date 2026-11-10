@@ -12,6 +12,7 @@ import {
   ProductVisibility,
   RoleCode,
 } from "@prisma/client";
+import { randomUUID } from "crypto";
 import * as bcrypt from "bcryptjs";
 import { PERMISSION_CATALOG, ROLE_PERMISSIONS } from "@ims/shared";
 
@@ -206,8 +207,8 @@ const SYSTEM_SETTINGS: {
   {
     key: "approval.policy",
     value: {
-      approverCount: 3,
-      earlyCount: 2,
+      approverCount: 1,
+      earlyCount: 1,
       lateCount: 3,
       mode: "UNANIMOUS",
       allowSelfApproval: false,
@@ -231,6 +232,7 @@ const ROLE_DEFS: [RoleCode, string, string][] = [
   ["ADMIN", "System Administrator", "Full control of the innovation system"],
   ["EVALUATOR", "Innovation Evaluator", "Review ideas and decide stage gates"],
   ["PRODUCT_OWNER", "Product Owner", "Own products, milestones and stage submissions"],
+  ["DEVELOPER", "Developer", "Recorded for rostering and milestone ownership; no portal access"],
 ];
 
 /**
@@ -461,34 +463,78 @@ async function seedDemo() {
   );
   const user = Object.fromEntries(users.map((item, index) => [usersData[index].key, item]));
 
+  // Developers are recorded for rostering and milestone ownership only. They have no portal
+  // access: the login guard blocks the DEVELOPER role and each account gets an unusable password.
+  const devPasswordHash = await bcrypt.hash(randomUUID(), 12);
+
+  const developersData = [
+    { key: "aiDev1", name: "Bekele Worku", email: "bekele.worku@dxvalley.dev", title: "ML Engineer", teamKey: "ai" },
+    { key: "aiDev2", name: "Halen Fikru", email: "halen.fikru@dxvalley.dev", title: "Data Scientist", teamKey: "ai" },
+    { key: "aiDev3", name: "Meron Alemu", email: "meron.alemu@dxvalley.dev", title: "AI Application Engineer", teamKey: "ai" },
+    { key: "payDev1", name: "Tesfaye Kuma", email: "tesfaye.kuma@dxvalley.dev", title: "Payments Backend Engineer", teamKey: "payment" },
+    { key: "payDev2", name: "Genet Assefa", email: "genet.assefa@dxvalley.dev", title: "Wallet Engineer", teamKey: "payment" },
+    { key: "payDev3", name: "Abel Tessema", email: "abel.tessema@dxvalley.dev", title: "Settlement Engineer", teamKey: "payment" },
+    { key: "platDev1", name: "Dennis Girma", email: "dennis.girma@dxvalley.dev", title: "Platform Engineer", teamKey: "platform" },
+    { key: "platDev2", name: "Saba Birhanu", email: "saba.birhanu@dxvalley.dev", title: "API Engineer", teamKey: "platform" },
+    { key: "platDev3", name: "Yared Bekele", email: "yared.bekele@dxvalley.dev", title: "Infrastructure Engineer", teamKey: "platform" },
+    { key: "intDev1", name: "Lidya Mekuria", email: "lidya.mekuria@dxvalley.dev", title: "Integration Engineer", teamKey: "integration" },
+    { key: "intDev2", name: "Fikru Wondimu", email: "fikru.wondimu@dxvalley.dev", title: "Middleware Engineer", teamKey: "integration" },
+    { key: "intDev3", name: "Nardos Gela", email: "nardos.gela@dxvalley.dev", title: "Partner Connectivity Engineer", teamKey: "integration" },
+  ];
+
+  const developers = await Promise.all(
+    developersData.map((dev) =>
+      prisma.user.create({
+        data: {
+          name: dev.name,
+          email: dev.email,
+          title: dev.title,
+          passwordHash: devPasswordHash,
+          isActive: true,
+          roleId: roleByName.DEVELOPER.id,
+        },
+      }),
+    ),
+  );
+  const dev = Object.fromEntries(
+    developers.map((item, index) => [developersData[index].key, item]),
+  );
+
   const teamsData = [
     {
       key: "ai",
       name: "AI",
       description: "Applied AI, document intelligence and agentic automation.",
       leadId: user.owner3.id,
-      memberIds: [user.owner3.id, user.admin.id, user.evaluator.id],
+      memberIds: [user.admin.id, user.evaluator.id, dev.aiDev1.id, dev.aiDev2.id, dev.aiDev3.id],
     },
     {
       key: "payment",
       name: "Payment",
       description: "Merchant payments, wallets and settlement experiences.",
       leadId: user.owner.id,
-      memberIds: [user.owner.id, user.owner4.id],
+      memberIds: [dev.payDev1.id, dev.payDev2.id, dev.payDev3.id],
     },
     {
       key: "platform",
       name: "Platform",
       description: "Core banking APIs, shared services and developer platform.",
       leadId: user.owner2.id,
-      memberIds: [user.owner2.id, user.evaluator.id],
+      memberIds: [user.evaluator.id, dev.platDev1.id, dev.platDev2.id, dev.platDev3.id],
     },
     {
       key: "integration",
       name: "Integration",
       description: "Partner connectivity, middleware and ecosystem integrations.",
       leadId: user.approver.id,
-      memberIds: [user.approver.id, user.owner4.id],
+      memberIds: [user.approver.id, dev.intDev1.id, dev.intDev2.id, dev.intDev3.id],
+    },
+    {
+      key: "products",
+      name: "Products",
+      description: "Product owners shaping and steering the portfolio.",
+      leadId: null,
+      memberIds: [user.owner.id, user.owner2.id, user.owner3.id, user.owner4.id],
     },
   ];
 

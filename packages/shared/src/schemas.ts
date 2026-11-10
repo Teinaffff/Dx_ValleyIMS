@@ -125,21 +125,37 @@ export const teamCreateSchema = z.object({
 });
 export type TeamCreateInput = z.infer<typeof teamCreateSchema>;
 
-export const userCreateSchema = z.object({
-  name: z.string().trim().min(2, "Name is required").max(80),
-  email: z.string().email("Enter a valid email"),
-  title: optionalText(80),
-  role: z.enum(["ADMIN", "EVALUATOR", "PRODUCT_OWNER"]),
-  password: z.string().min(8, "Use at least 8 characters"),
-  teamIds: z.array(z.string()).default([]),
-});
+export const userCreateSchema = z
+  .object({
+    name: z.string().trim().min(2, "Name is required").max(80),
+    email: z.string().email("Enter a valid email"),
+    title: optionalText(80),
+    role: z.enum(["ADMIN", "EVALUATOR", "PRODUCT_OWNER", "DEVELOPER"]),
+    password: z
+      .string()
+      .min(8, "Use at least 8 characters")
+      .max(72)
+      .optional()
+      .or(z.literal("")),
+    teamIds: z.array(z.string()).default([]),
+  })
+  .superRefine((value, ctx) => {
+    if (value.role === "DEVELOPER") return;
+    if (!value.password || value.password.length < 8) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["password"],
+        message: "A temporary password is required for portal roles",
+      });
+    }
+  });
 export type UserCreateInput = z.infer<typeof userCreateSchema>;
 
 export const userUpdateSchema = z.object({
   name: z.string().trim().min(2, "Name is required").max(80),
   email: z.string().trim().email("Enter a valid email"),
   title: optionalText(80),
-  role: z.enum(["ADMIN", "EVALUATOR", "PRODUCT_OWNER"]),
+  role: z.enum(["ADMIN", "EVALUATOR", "PRODUCT_OWNER", "DEVELOPER"]),
   teamIds: z.array(z.string()).default([]),
 });
 export type UserUpdateInput = z.infer<typeof userUpdateSchema>;
@@ -172,16 +188,9 @@ export const publicIdeaCreateSchema = z.object({
     .trim()
     .min(4, "Give your idea a short title")
     .max(120, "Keep the title under 120 characters"),
-  problem: z
-    .string()
-    .trim()
-    .min(20, "Describe the problem in at least 20 characters")
-    .max(2000, "Keep the problem under 2,000 characters"),
-  solution: z
-    .string()
-    .trim()
-    .min(20, "Describe your proposed solution in at least 20 characters")
-    .max(2000, "Keep the solution under 2,000 characters"),
+  // Required (20+ chars) only when no attachment is added; the form checks that.
+  problem: z.string().trim().max(2000, "Keep the problem under 2,000 characters"),
+  solution: z.string().trim().max(2000, "Keep the solution under 2,000 characters"),
   expectedImpact: optionalText(1000),
 });
 export type PublicIdeaCreateInput = z.infer<typeof publicIdeaCreateSchema>;

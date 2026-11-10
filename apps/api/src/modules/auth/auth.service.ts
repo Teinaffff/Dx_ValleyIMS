@@ -68,6 +68,15 @@ export class AuthService {
       throw new UnauthorizedException("Email or password is incorrect");
     }
 
+    // Developers are recorded for rostering and milestone ownership only and are
+    // not issued portal credentials. Block them before the password check so the
+    // message stays accurate and no session is ever minted for this role.
+    if (dbUser.role.code === "DEVELOPER") {
+      throw new UnauthorizedException(
+        "Developer accounts don't have portal access. Ask your product owner or an administrator.",
+      );
+    }
+
     const bcrypt = await import("bcryptjs");
     const valid = await bcrypt.compare(password, dbUser.passwordHash);
     if (!valid) {
@@ -104,6 +113,10 @@ export class AuthService {
 
       if (!dbUser || !dbUser.isActive || dbUser.deletedAt) {
         throw new UnauthorizedException("This account is no longer active");
+      }
+
+      if (dbUser.role.code === "DEVELOPER") {
+        throw new UnauthorizedException("Developer accounts don't have portal access.");
       }
 
       const user = toSessionUser(dbUser);

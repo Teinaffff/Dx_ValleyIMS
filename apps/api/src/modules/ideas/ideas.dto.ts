@@ -32,13 +32,17 @@ export class CreatePublicIdeaDto {
   @Length(4, 120)
   title!: string;
 
+  // Optional here: the service requires them (20+ chars) unless the idea
+  // comes with at least one attachment (voice note, video, image, document).
+  @IsOptional()
   @IsString()
-  @Length(20, 2000)
-  problem!: string;
+  @MaxLength(2000)
+  problem?: string;
 
+  @IsOptional()
   @IsString()
-  @Length(20, 2000)
-  solution!: string;
+  @MaxLength(2000)
+  solution?: string;
 
   @IsOptional()
   @IsString()
