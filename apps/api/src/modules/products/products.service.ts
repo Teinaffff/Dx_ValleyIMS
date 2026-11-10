@@ -207,7 +207,7 @@ export class ProductsService {
       include: productDetailInclude,
     });
     if (!product) throw new NotFoundException("Product not found");
-    this.assertViewAccess(product.ownerId, user);
+    await this.assertViewAccess(product.ownerId, user, product.id);
     return this.mapDetail(product);
   }
 
@@ -217,7 +217,7 @@ export class ProductsService {
       select: { id: true, ownerId: true },
     });
     if (!product) throw new NotFoundException("Product not found");
-    this.assertViewAccess(product.ownerId, user);
+    await this.assertViewAccess(product.ownerId, user, product.id);
     const entries = await this.prisma.stageHistory.findMany({
       where: { productId: id },
       orderBy: { createdAt: "asc" },
@@ -480,7 +480,7 @@ export class ProductsService {
       select: { id: true, ownerId: true },
     });
     if (!product) throw new NotFoundException("Product not found");
-    this.assertViewAccess(product.ownerId, user);
+    await this.assertViewAccess(product.ownerId, user, product.id);
 
     const milestones = await this.prisma.milestone.findMany({
       where: {
@@ -918,7 +918,7 @@ export class ProductsService {
       include: { members: productDetailInclude.members },
     });
     if (!product) throw new NotFoundException("Product not found");
-    this.assertViewAccess(product.ownerId, user);
+    await this.assertViewAccess(product.ownerId, user, product.id);
     return product.members.map((membership) => this.mapMember(membership));
   }
 
@@ -928,7 +928,7 @@ export class ProductsService {
       select: { id: true, ownerId: true, members: { select: { userId: true } } },
     });
     if (!product) throw new NotFoundException("Product not found");
-    this.assertViewAccess(product.ownerId, user);
+    await this.assertViewAccess(product.ownerId, user, product.id);
 
     const exclude = new Set(product.members.map((member) => member.userId));
     // The delivery roster is developers only. The product owner is a separate
@@ -1329,20 +1329,29 @@ export class ProductsService {
     ) {
       return {};
     }
+    if (user.role === "PEER_EVALUATOR") {
+      return { evaluators: { some: { userId: user.id } } };
+    }
     if (user.permissions.includes(PERMISSIONS.PRODUCT_VIEW_OWN)) {
       return { ownerId: user.id };
     }
     throw new ForbiddenException("You do not have permission to view products");
   }
 
-  private assertViewAccess(ownerId: string, user: AuthUser) {
+  private async assertViewAccess(ownerId: string, user: AuthUser, productId: string) {
     if (
       user.role === "ADMIN" ||
       user.permissions.includes(PERMISSIONS.PRODUCT_VIEW_ALL) ||
-      (user.permissions.includes(PERMISSIONS.PRODUCT_VIEW_OWN) &&
-        ownerId === user.id)
+      (user.permissions.includes(PERMISSIONS.PRODUCT_VIEW_OWN) && ownerId === user.id)
     ) {
       return;
+    }
+    // Peer evaluators see only the products assigned to them.
+    if (user.role === "PEER_EVALUATOR") {
+      const assigned = await this.prisma.productEvaluator.findUnique({
+        where: { productId_userId: { productId, userId: user.id } },
+      });
+      if (assigned) return;
     }
     throw new ForbiddenException("You do not have permission to view this product");
   }

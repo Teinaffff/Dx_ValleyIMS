@@ -158,7 +158,9 @@ function EditUserDialog({
               error={form.formState.errors.role?.message}
             >
               <Select disabled={isSelf} {...form.register("role")}>
-                {ROLE_CODES.map((code) => (
+                {ROLE_CODES.filter(
+                  (code) => code !== "PEER_EVALUATOR" || user.role === "PEER_EVALUATOR",
+                ).map((code) => (
                   <option key={code} value={code}>
                     {ROLE_LABELS[code]}
                   </option>

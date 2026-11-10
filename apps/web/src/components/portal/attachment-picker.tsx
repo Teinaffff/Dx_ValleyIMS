@@ -72,10 +72,14 @@ export function AttachmentPicker({
   const filesRef = React.useRef(files);
   filesRef.current = files;
 
-  const canRecord =
-    typeof window !== "undefined" &&
-    typeof MediaRecorder !== "undefined" &&
-    Boolean(navigator.mediaDevices?.getUserMedia);
+  // Browser support is only known after mount. Deciding it during render would
+  // make the server HTML (no button) differ from the client's (button).
+  const [canRecord, setCanRecord] = React.useState(false);
+  React.useEffect(() => {
+    setCanRecord(
+      typeof MediaRecorder !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia),
+    );
+  }, []);
 
   function add(incoming: File[]) {
     setError(null);

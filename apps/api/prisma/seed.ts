@@ -15,6 +15,7 @@ import {
 import { randomUUID } from "crypto";
 import * as bcrypt from "bcryptjs";
 import { PERMISSION_CATALOG, ROLE_PERMISSIONS } from "@ims/shared";
+import { STARTER_QUESTIONS } from "./evaluator-questions";
 
 const prisma = new PrismaClient();
 
@@ -217,13 +218,33 @@ const SYSTEM_SETTINGS: {
     description: "Default stage gate approval configuration",
   },
   {
+    key: "evaluator.assessment",
+    value: {
+      questionCount: 20,
+      durationMinutes: 30,
+      passScore: 80,
+      maxAttempts: 2,
+      retakeAfterDays: 2,
+      authorizationMonths: 12,
+      weights: {
+        INNOVATION_FUNDAMENTALS: 15,
+        STRATEGIC_THINKING: 20,
+        CRITICAL_THINKING: 20,
+        RISK_MANAGEMENT: 15,
+        EVALUATION_ETHICS: 15,
+        PRODUCT_BUSINESS: 15,
+      },
+    },
+    description: "Evaluator qualification assessment configuration",
+  },
+  {
     key: "visibility.default",
     value: { value: "EVERYONE" },
     description: "Default visibility applied to new products",
   },
   {
     key: "notifications.enabled",
-    value: { inApp: true, email: false },
+    value: { inApp: true, email: true },
     description: "Notification channels",
   },
 ];
@@ -231,6 +252,7 @@ const SYSTEM_SETTINGS: {
 const ROLE_DEFS: [RoleCode, string, string][] = [
   ["ADMIN", "System Administrator", "Full control of the innovation system"],
   ["EVALUATOR", "Innovation Evaluator", "Review ideas and decide stage gates"],
+  ["PEER_EVALUATOR", "Peer Evaluator", "Qualified employee authorized to evaluate assigned early-stage gates"],
   ["PRODUCT_OWNER", "Product Owner", "Own products, milestones and stage submissions"],
   ["DEVELOPER", "Developer", "Recorded for rostering and milestone ownership; no portal access"],
 ];
@@ -300,6 +322,14 @@ async function seedBase() {
     settingsAdded += 1;
   }
 
+  // Starter question bank, only when the administrators have not built one yet.
+  let questionsAdded = 0;
+  if ((await prisma.assessmentQuestion.count()) === 0) {
+    await prisma.assessmentQuestion.createMany({ data: STARTER_QUESTIONS });
+    questionsAdded = STARTER_QUESTIONS.length;
+  }
+
+  console.log(`  evaluator questions +${questionsAdded}`);
   console.log(`  roles ${ROLE_DEFS.length}, permissions ${PERMISSION_CATALOG.length}, stage templates +${templatesAdded}, settings +${settingsAdded}`);
 
   const email = process.env.SEED_ADMIN_EMAIL?.trim().toLowerCase();

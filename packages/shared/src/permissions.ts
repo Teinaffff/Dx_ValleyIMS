@@ -23,6 +23,7 @@ export const PERMISSIONS = {
   USER_MANAGE: "user.manage",
   TEAM_MANAGE: "team.manage",
   ROLE_MANAGE: "role.manage",
+  EVALUATOR_MANAGE: "evaluator.manage",
   SETTINGS_MANAGE: "settings.manage",
   ANALYTICS_VIEW: "analytics.view",
   AUDIT_VIEW: "audit.view",
@@ -56,6 +57,10 @@ export const PERMISSION_CATALOG: { code: string; description: string }[] = [
   { code: PERMISSIONS.USER_MANAGE, description: "Create and manage users" },
   { code: PERMISSIONS.TEAM_MANAGE, description: "Create and manage teams" },
   { code: PERMISSIONS.ROLE_MANAGE, description: "Manage roles and permissions" },
+  {
+    code: PERMISSIONS.EVALUATOR_MANAGE,
+    description: "Manage evaluator applications, question bank and authorizations",
+  },
   { code: PERMISSIONS.SETTINGS_MANAGE, description: "Manage system configuration" },
   { code: PERMISSIONS.ANALYTICS_VIEW, description: "View analytics and reports" },
   { code: PERMISSIONS.AUDIT_VIEW, description: "View immutable audit logs" },
@@ -72,6 +77,15 @@ export const ROLE_PERMISSIONS: Record<string, string[]> = {
     PERMISSIONS.IDEA_REVIEW,
     PERMISSIONS.NOTIFICATION_VIEW,
     PERMISSIONS.ANALYTICS_VIEW,
+  ],
+  // Peer evaluators are qualified employees authorized for specific early-stage
+  // gates. They only see the products they are assigned to; the gate service
+  // enforces authorization, stage and conflict-of-interest rules on each decision.
+  PEER_EVALUATOR: [
+    PERMISSIONS.PRODUCT_VIEW_OWN,
+    PERMISSIONS.GATE_VIEW,
+    PERMISSIONS.GATE_DECIDE,
+    PERMISSIONS.NOTIFICATION_VIEW,
   ],
   PRODUCT_OWNER: [
     PERMISSIONS.PRODUCT_VIEW_OWN,

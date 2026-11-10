@@ -43,6 +43,16 @@ export function SiteFooter() {
                   Submit an idea
                 </Link>
               </li>
+              <li>
+                <Link href="/track-idea" className="transition hover:text-white">
+                  Track your idea
+                </Link>
+              </li>
+              <li>
+                <Link href="/become-evaluator" className="transition hover:text-white">
+                  Become an Evaluator
+                </Link>
+              </li>
             </ul>
           </div>
 

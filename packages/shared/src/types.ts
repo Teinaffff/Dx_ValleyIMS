@@ -373,6 +373,36 @@ export interface IdeaAttachmentRef {
   size: number;
 }
 
+export interface IdeaScoreEntry {
+  evaluator: { id: string; name: string };
+  impact: number;
+  feasibility: number;
+  strategicFit: number;
+  comment: string | null;
+  updatedAt: string;
+}
+
+export interface IdeaScoring {
+  /** Mean of every evaluator's three-dimension average, 1-5; null until scored. */
+  average: number | null;
+  count: number;
+  averages: { impact: number; feasibility: number; strategicFit: number } | null;
+  mine: { impact: number; feasibility: number; strategicFit: number; comment: string | null } | null;
+  entries: IdeaScoreEntry[];
+}
+
+export interface IdeaTrackResult {
+  reference: string;
+  title: string;
+  stage: "RECEIVED" | "IN_REVIEW" | "NEEDS_INFO" | "PARKED" | "APPROVED" | "PRODUCT" | "CLOSED";
+  headline: string;
+  message: string;
+  submittedAt: string;
+  decidedAt: string | null;
+  attachmentCount: number;
+  clarification: string | null;
+}
+
 export interface IdeaInboxItem {
   id: string;
   reference: string;
@@ -381,6 +411,7 @@ export interface IdeaInboxItem {
   solution: string;
   expectedImpact: string | null;
   attachments: IdeaAttachmentRef[];
+  scoring: IdeaScoring;
   status: IdeaStatus;
   submitter: {
     name: string;
@@ -393,6 +424,7 @@ export interface IdeaInboxItem {
   reviewedBy: UserRef | null;
   convertedProductId: string | null;
   approvedAt: string | null;
+  statusChangedAt: string | null;
   deletedAt: string | null;
   createdAt: string;
 }
@@ -401,6 +433,8 @@ export interface IdeaStatusCounts {
   all: number;
   pending: number;
   approved: number;
+  parked: number;
+  rejected: number;
   deleted: number;
 }
 

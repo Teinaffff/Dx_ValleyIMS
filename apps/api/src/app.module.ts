@@ -15,6 +15,8 @@ import { GatesModule } from "./modules/gates/gates.module";
 import { DashboardModule } from "./modules/dashboard/dashboard.module";
 import { ChallengesModule } from "./modules/challenges/challenges.module";
 import { IdeasModule } from "./modules/ideas/ideas.module";
+import { EvaluatorsModule } from "./modules/evaluators/evaluators.module";
+import { MailModule } from "./modules/mail/mail.module";
 import { SearchModule } from "./modules/search/search.module";
 import { NotificationsModule } from "./modules/notifications/notifications.module";
 import { AuditModule } from "./modules/audit/audit.module";
@@ -36,6 +38,8 @@ import { AuditModule } from "./modules/audit/audit.module";
     DashboardModule,
     ChallengesModule,
     IdeasModule,
+    EvaluatorsModule,
+    MailModule,
     NotificationsModule,
     SearchModule,
   ],

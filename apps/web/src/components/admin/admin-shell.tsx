@@ -9,6 +9,7 @@ import {
   ChartNoAxesCombined,
   ChevronsUpDown,
   GitBranch,
+  GraduationCap,
   KeyRound,
   Layers,
   LayoutDashboard,
@@ -43,7 +44,13 @@ import {
 
 const NAV_GROUPS: {
   label: string;
-  items: { href: string; label: string; icon: React.ElementType; feature?: FeatureKey }[];
+  items: {
+    href: string;
+    label: string;
+    icon: React.ElementType;
+    feature?: FeatureKey;
+    permission?: string;
+  }[];
 }[] = [
   {
     label: "Workspace",
@@ -67,6 +74,12 @@ const NAV_GROUPS: {
     label: "Governance",
     items: [
       { href: "/admin/users", label: "User management", icon: UserCog },
+      {
+        href: "/admin/evaluators",
+        label: "Evaluator management",
+        icon: GraduationCap,
+        permission: "evaluator.manage",
+      },
       { href: "/admin/roles", label: "Roles & permissions", icon: KeyRound, feature: "rolesPermissions" },
       { href: "/admin/audit-logs", label: "Audit logs", icon: ScrollText, feature: "auditLogs" },
       { href: "/admin/settings", label: "System configuration", icon: Settings2, feature: "systemConfiguration" },
@@ -79,13 +92,20 @@ const VISIBLE_NAV_GROUPS = NAV_GROUPS.map((group) => ({
   items: group.items.filter((item) => !item.feature || FEATURES[item.feature]),
 })).filter((group) => group.items.length > 0);
 
-const SEARCH_PAGES = [
-  ...VISIBLE_NAV_GROUPS.flatMap((group) => group.items).map((item) => ({
-    href: item.href,
-    label: item.label,
-  })),
-  { href: "/", label: "Public portal" },
-];
+// Peer evaluators get a focused workspace: only what they need to evaluate the
+// products assigned to them. Everyone else sees the pages their permissions allow.
+const PEER_EVALUATOR_PAGES = ["/admin/dashboard", "/admin/products", "/admin/approvals"];
+
+function navFor(user: SessionUser) {
+  return VISIBLE_NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) =>
+      user.role === "PEER_EVALUATOR"
+        ? PEER_EVALUATOR_PAGES.includes(item.href)
+        : !item.permission || user.permissions.includes(item.permission),
+    ),
+  })).filter((group) => group.items.length > 0);
+}
 
 function isCurrent(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
@@ -100,6 +120,17 @@ export function AdminShell({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const navGroups = React.useMemo(() => navFor(user), [user]);
+  const searchPages = React.useMemo(
+    () => [
+      ...navGroups.flatMap((group) => group.items).map((item) => ({
+        href: item.href,
+        label: item.label,
+      })),
+      { href: "/", label: "Public portal" },
+    ],
+    [navGroups],
+  );
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [signingOut, setSigningOut] = React.useState(false);
   const [passwordOpen, setPasswordOpen] = React.useState(false);
@@ -158,12 +189,12 @@ export function AdminShell({
       </div>
 
       <div className="px-4 pb-4">
-        <GlobalSearch pages={SEARCH_PAGES} />
+        <GlobalSearch pages={searchPages} />
       </div>
 
       <nav className="flex-1 overflow-y-auto px-3 pb-4">
         <div className="space-y-5">
-          {VISIBLE_NAV_GROUPS.map((group) => (
+          {navGroups.map((group) => (
             <div key={group.label}>
               <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-ink/35">
                 {group.label}

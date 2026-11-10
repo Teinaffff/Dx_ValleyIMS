@@ -17,6 +17,7 @@ export const metadata = { title: "User management" };
 const roleTone: Record<string, string> = {
   ADMIN: "bg-ink text-white",
   EVALUATOR: "bg-soft text-ink/60",
+  PEER_EVALUATOR: "bg-primary-soft text-primary",
   PRODUCT_OWNER: "bg-primary-soft text-primary",
   DEVELOPER: "bg-canvas text-ink/50 ring-1 ring-inset ring-line",
 };

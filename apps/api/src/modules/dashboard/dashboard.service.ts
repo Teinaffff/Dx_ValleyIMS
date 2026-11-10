@@ -26,9 +26,12 @@ export class DashboardService {
     const canViewAll =
       user.role === "ADMIN" ||
       user.permissions.includes(PERMISSIONS.PRODUCT_VIEW_ALL);
+    const isPeer = user.role === "PEER_EVALUATOR";
     const productScope: Prisma.ProductWhereInput = canViewAll
       ? {}
-      : { ownerId: user.id };
+      : isPeer
+        ? { evaluators: { some: { userId: user.id } } }
+        : { ownerId: user.id };
 
     const pendingWhere: Prisma.StageGateRequestWhereInput = {
       status: "PENDING_APPROVAL",
@@ -36,7 +39,9 @@ export class DashboardService {
         ? {}
         : user.role === "PRODUCT_OWNER"
           ? { product: { ownerId: user.id } }
-          : {}),
+          : isPeer
+            ? { product: { evaluators: { some: { userId: user.id } } } }
+            : {}),
     };
 
     const productBaseWhere: Prisma.ProductWhereInput = {

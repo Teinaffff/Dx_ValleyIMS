@@ -29,7 +29,7 @@ export class CreateUserDto {
   title?: string;
 
   @IsIn(ROLE_CODES as unknown as string[])
-  role!: "ADMIN" | "EVALUATOR" | "PRODUCT_OWNER" | "DEVELOPER";
+  role!: "ADMIN" | "EVALUATOR" | "PEER_EVALUATOR" | "PRODUCT_OWNER" | "DEVELOPER";
 
   @IsOptional()
   @IsString()
@@ -62,7 +62,7 @@ export class UpdateUserDto {
 
   @IsOptional()
   @IsIn(ROLE_CODES as unknown as string[])
-  role?: "ADMIN" | "EVALUATOR" | "PRODUCT_OWNER" | "DEVELOPER";
+  role?: "ADMIN" | "EVALUATOR" | "PEER_EVALUATOR" | "PRODUCT_OWNER" | "DEVELOPER";
 
   @IsOptional()
   @IsBoolean()

@@ -2,12 +2,15 @@ import Link from "next/link";
 import {
   ArrowDownWideNarrow,
   ArrowUpWideNarrow,
+  Ban,
   CheckCircle2,
   ExternalLink,
   Lightbulb,
   Mail,
+  PauseCircle,
   RotateCcw,
   Search,
+  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -25,6 +28,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { IdeaActions } from "@/components/admin/idea-actions";
 import { IdeaAttachments } from "@/components/admin/idea-attachments";
+import { IdeaScorePanel } from "@/components/admin/idea-score-panel";
 import { ConvertIdeaDialog } from "@/components/admin/product-form";
 import { cn } from "@/lib/utils";
 import { formatDate } from "@/lib/format";
@@ -35,6 +39,8 @@ const TABS = [
   { key: "all", label: "All" },
   { key: "pending", label: "Pending" },
   { key: "approved", label: "Approved" },
+  { key: "parked", label: "Parked" },
+  { key: "rejected", label: "Rejected" },
   { key: "deleted", label: "Deleted" },
 ] as const;
 
@@ -47,6 +53,7 @@ const statusTone: Record<string, string> = {
   ACCEPTED: "bg-success/10 text-success",
   APPROVED: "bg-success/10 text-success",
   REJECTED: "bg-danger/10 text-danger",
+  PARKED: "bg-warning/15 text-[#9A6206]",
   CONVERTED: "bg-primary-soft text-primary",
   DELETED: "bg-danger/10 text-danger",
 };
@@ -54,7 +61,7 @@ const statusTone: Record<string, string> = {
 function buildHref(params: {
   status: TabKey;
   q?: string;
-  sort: "newest" | "oldest";
+  sort: "newest" | "oldest" | "score";
   page?: number;
 }) {
   const query = new URLSearchParams();
@@ -80,7 +87,9 @@ export default async function IdeasPage({
     ? (requestedStatus as TabKey)
     : "all";
   const q = pick(raw.q)?.trim() ?? "";
-  const sort = pick(raw.sort) === "oldest" ? "oldest" : "newest";
+  const requestedSort = pick(raw.sort);
+  const sort: "newest" | "oldest" | "score" =
+    requestedSort === "oldest" || requestedSort === "score" ? requestedSort : "newest";
   const requestedPage = Number(pick(raw.page) ?? "1");
   const page = Number.isFinite(requestedPage) && requestedPage > 0 ? Math.floor(requestedPage) : 1;
 
@@ -96,6 +105,9 @@ export default async function IdeasPage({
     serverGet<CategoryMeta>("/api/products/meta"),
   ]);
 
+  const canReview =
+    !!session &&
+    (session.role === "ADMIN" || session.permissions.includes(PERMISSIONS.IDEA_REVIEW));
   const canApprove =
     !!session &&
     (session.role === "ADMIN" || session.permissions.includes(PERMISSIONS.IDEA_APPROVE));
@@ -110,7 +122,7 @@ export default async function IdeasPage({
     !!session &&
     (session.role === "ADMIN" || session.permissions.includes(PERMISSIONS.IDEA_RESTORE));
 
-  const counts = data?.counts ?? { all: 0, pending: 0, approved: 0, deleted: 0 };
+  const counts = data?.counts ?? { all: 0, pending: 0, approved: 0, parked: 0, rejected: 0, deleted: 0 };
   const items = data?.items ?? [];
   const hasFilters = q.length > 0 || status !== "all";
 
@@ -222,17 +234,28 @@ export default async function IdeasPage({
 
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-medium text-muted">Sort</span>
-            <Link
-              href={buildHref({ status, q, sort: sort === "newest" ? "oldest" : "newest" })}
-              className="inline-flex items-center gap-2 rounded-full border border-line bg-surface px-3.5 py-2 text-[12px] font-semibold text-ink/70 transition hover:border-ink/15 hover:bg-canvas"
-            >
-              {sort === "newest" ? (
-                <ArrowDownWideNarrow className="h-4 w-4" />
-              ) : (
-                <ArrowUpWideNarrow className="h-4 w-4" />
-              )}
-              {sort === "newest" ? "Newest first" : "Oldest first"}
-            </Link>
+            <div className="inline-flex rounded-full border border-line bg-surface p-1">
+              {(
+                [
+                  { key: "newest", label: "Newest", icon: ArrowDownWideNarrow },
+                  { key: "oldest", label: "Oldest", icon: ArrowUpWideNarrow },
+                  { key: "score", label: "Highest score", icon: Star },
+                ] as const
+              ).map((option) => (
+                <Link
+                  key={option.key}
+                  href={buildHref({ status, q, sort: option.key })}
+                  aria-current={sort === option.key ? "true" : undefined}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-[12px] font-semibold transition",
+                    sort === option.key ? "bg-ink text-white" : "text-ink/60 hover:text-ink",
+                  )}
+                >
+                  <option.icon className="h-3.5 w-3.5" />
+                  {option.label}
+                </Link>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -355,6 +378,34 @@ export default async function IdeasPage({
                 </div>
               ) : null}
 
+              {idea.status === "REJECTED" || idea.status === "PARKED" ? (
+                <div
+                  className={cn(
+                    "mt-4 flex flex-wrap items-start gap-x-2 gap-y-1 rounded-2xl border px-4 py-3 text-[11px] text-ink/70",
+                    idea.status === "REJECTED"
+                      ? "border-danger/15 bg-danger/[0.04]"
+                      : "border-warning/25 bg-warning/[0.07]",
+                  )}
+                >
+                  {idea.status === "REJECTED" ? (
+                    <Ban className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
+                  ) : (
+                    <PauseCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#9A6206]" />
+                  )}
+                  <span className="font-semibold">
+                    {idea.status === "REJECTED" ? "Rejected" : "Parked"} by{" "}
+                    {idea.reviewedBy?.name ?? "an administrator"}
+                  </span>
+                  {idea.statusChangedAt ? <span>· {formatDate(idea.statusChangedAt)}</span> : null}
+                  {idea.reviewNote ? (
+                    <span className="w-full pl-5">
+                      {idea.status === "REJECTED" ? "Reason (internal): " : "Note: "}
+                      {idea.reviewNote}
+                    </span>
+                  ) : null}
+                </div>
+              ) : null}
+
               {idea.status === "DELETED" ? (
                 <div className="mt-4 flex flex-wrap items-start gap-x-2 gap-y-1 rounded-2xl border border-danger/15 bg-danger/[0.04] px-4 py-3 text-[11px] text-ink/70">
                   <RotateCcw className="mt-0.5 h-3.5 w-3.5 shrink-0 text-danger" />
@@ -389,6 +440,15 @@ export default async function IdeasPage({
 
               {idea.attachments.length ? (
                 <IdeaAttachments ideaId={idea.id} attachments={idea.attachments} />
+              ) : null}
+
+              {idea.status !== "DELETED" ? (
+                <IdeaScorePanel
+                  ideaId={idea.id}
+                  title={idea.title}
+                  scoring={idea.scoring}
+                  canScore={canReview}
+                />
               ) : null}
 
               {idea.expectedImpact ? (

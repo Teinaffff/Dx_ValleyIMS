@@ -5,7 +5,7 @@ import {
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
-import { PublicIdeaForm } from "@/components/portal/public-idea-form";
+import { IdeaSubmissionPanel } from "@/components/portal/idea-submission-panel";
 
 export const metadata = { title: "Submit an idea" };
 
@@ -76,7 +76,7 @@ export default function SubmitIdeaPage() {
 
         <aside className="lg:pt-4">
           <div className="rounded-[32px] border border-white/80 bg-surface p-6 shadow-float sm:p-8">
-            <PublicIdeaForm />
+            <IdeaSubmissionPanel />
           </div>
 
           <div className="mt-4 rounded-[24px] border border-white/80 bg-white/70 p-5 backdrop-blur">

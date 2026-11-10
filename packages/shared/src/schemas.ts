@@ -130,7 +130,7 @@ export const userCreateSchema = z
     name: z.string().trim().min(2, "Name is required").max(80),
     email: z.string().email("Enter a valid email"),
     title: optionalText(80),
-    role: z.enum(["ADMIN", "EVALUATOR", "PRODUCT_OWNER", "DEVELOPER"]),
+    role: z.enum(["ADMIN", "EVALUATOR", "PEER_EVALUATOR", "PRODUCT_OWNER", "DEVELOPER"]),
     password: z
       .string()
       .min(8, "Use at least 8 characters")
@@ -155,7 +155,7 @@ export const userUpdateSchema = z.object({
   name: z.string().trim().min(2, "Name is required").max(80),
   email: z.string().trim().email("Enter a valid email"),
   title: optionalText(80),
-  role: z.enum(["ADMIN", "EVALUATOR", "PRODUCT_OWNER", "DEVELOPER"]),
+  role: z.enum(["ADMIN", "EVALUATOR", "PEER_EVALUATOR", "PRODUCT_OWNER", "DEVELOPER"]),
   teamIds: z.array(z.string()).default([]),
 });
 export type UserUpdateInput = z.infer<typeof userUpdateSchema>;

@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useRouter } from "next/navigation";
-import { Check, Loader2, RotateCcw, Trash2 } from "lucide-react";
+import { Ban, Check, Loader2, PauseCircle, RotateCcw, Trash2, Undo2 } from "lucide-react";
 import { toast } from "sonner";
 import type { IdeaStatus } from "@ims/shared";
 import { apiFetch, ApiError } from "@/lib/api";
@@ -17,7 +17,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-type ActionKind = "approve" | "delete";
+type ActionKind = "approve" | "reject" | "park" | "delete";
 
 const PENDING = ["SUBMITTED", "UNDER_REVIEW", "NEEDS_CLARIFICATION"];
 
@@ -33,6 +33,24 @@ const COPY: Record<
     placeholder: "Why is this idea worth pursuing?",
     confirm: "Approve idea",
     busy: "Approving…",
+  },
+  reject: {
+    title: "Reject this idea?",
+    description:
+      "Rejecting is a decision, not a removal: the idea stays on record with your reason. The submitter gets a short, neutral email and never sees your reason. You can move it back to review later.",
+    label: "Reason (required)",
+    placeholder: "Why isn't this idea being taken forward?",
+    confirm: "Reject idea",
+    busy: "Rejecting…",
+  },
+  park: {
+    title: "Park this idea?",
+    description:
+      "Parking puts a good idea on hold when the timing is wrong. It leaves the pending queue but is kept, and the submitter is told it's parked, not rejected. You can move it back to review or approve it later.",
+    label: "Note (optional)",
+    placeholder: "When or why should this be revisited?",
+    confirm: "Park idea",
+    busy: "Parking…",
   },
   delete: {
     title: "Delete this idea?",
@@ -67,6 +85,9 @@ export function IdeaActions({
 
   const deleted = status === "DELETED";
   const pending = PENDING.includes(status);
+  // A parked idea is on hold, not decided, so it can still be approved or rejected.
+  const decidable = pending || status === "PARKED";
+  const closedOut = status === "PARKED" || status === "REJECTED";
 
   function open(kind: ActionKind) {
     setNote("");
@@ -86,6 +107,18 @@ export function IdeaActions({
           }),
         });
         toast.success(`“${title}” approved`);
+      } else if (action === "reject") {
+        await apiFetch(`/api/ideas/${ideaId}/reject`, {
+          method: "POST",
+          body: JSON.stringify({ reason: note.trim() }),
+        });
+        toast.success(`“${title}” rejected`);
+      } else if (action === "park") {
+        await apiFetch(`/api/ideas/${ideaId}/park`, {
+          method: "POST",
+          body: JSON.stringify({ note: note.trim() || undefined }),
+        });
+        toast.success(`“${title}” parked`);
       } else {
         await apiFetch(`/api/ideas/${ideaId}`, {
           method: "DELETE",
@@ -94,6 +127,21 @@ export function IdeaActions({
         toast.success(`“${title}” moved to deleted`);
       }
       setAction(null);
+      router.refresh();
+    } catch (error) {
+      toast.error(
+        error instanceof ApiError ? error.message : "That action could not be completed.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reopen() {
+    setBusy(true);
+    try {
+      await apiFetch(`/api/ideas/${ideaId}/reopen`, { method: "POST" });
+      toast.success(`“${title}” moved back to review`);
       router.refresh();
     } catch (error) {
       toast.error(
@@ -140,9 +188,46 @@ export function IdeaActions({
         </Button>
       ) : null}
 
-      {!deleted && pending && canApprove ? (
+      {!deleted && decidable && canApprove ? (
         <Button type="button" size="md" onClick={() => open("approve")} disabled={busy}>
           <Check className="h-4 w-4" /> Approve
+        </Button>
+      ) : null}
+
+      {!deleted && pending && canApprove ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="md"
+          onClick={() => open("park")}
+          disabled={busy}
+        >
+          <PauseCircle className="h-4 w-4" /> Park
+        </Button>
+      ) : null}
+
+      {!deleted && decidable && canApprove ? (
+        <Button
+          type="button"
+          variant="outline"
+          size="md"
+          onClick={() => open("reject")}
+          disabled={busy}
+        >
+          <Ban className="h-4 w-4" /> Reject
+        </Button>
+      ) : null}
+
+      {!deleted && closedOut && canApprove ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="md"
+          onClick={() => void reopen()}
+          disabled={busy}
+        >
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+          Back to review
         </Button>
       ) : null}
 
@@ -170,7 +255,7 @@ export function IdeaActions({
             <>
               <DialogHeader>
                 <DialogTitle>
-                  {action === "approve" ? "Approve" : "Delete"} “{title}”?
+                  {{ approve: "Approve", reject: "Reject", park: "Park", delete: "Delete" }[action]} “{title}”?
                 </DialogTitle>
                 <DialogDescription>{COPY[action].description}</DialogDescription>
               </DialogHeader>
@@ -197,10 +282,10 @@ export function IdeaActions({
                 </Button>
                 <Button
                   type="button"
-                  variant={action === "delete" ? "danger" : "primary"}
+                  variant={action === "delete" || action === "reject" ? "danger" : "primary"}
                   size="md"
                   onClick={() => void confirm()}
-                  disabled={busy}
+                  disabled={busy || (action === "reject" && note.trim().length < 3)}
                 >
                   {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                   {busy ? COPY[action].busy : COPY[action].confirm}

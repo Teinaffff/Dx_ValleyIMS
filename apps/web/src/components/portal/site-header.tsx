@@ -31,6 +31,7 @@ import { ChangePasswordDialog } from "@/components/account/change-password-dialo
 const NAV: { href: string; label: string; desktopOnly?: boolean }[] = [
   { href: "/", label: "Portfolio" },
   { href: "/submit-idea", label: "Submit an idea", desktopOnly: true },
+  { href: "/become-evaluator", label: "Become an Evaluator", desktopOnly: true },
 ];
 
 export function SiteHeader({ user }: { user: SessionUser | null }) {

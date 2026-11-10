@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Put,
   Query,
   Req,
   Res,
@@ -27,6 +28,11 @@ import {
   CreatePublicIdeaDto,
   DeleteIdeaDto,
   ListIdeasDto,
+  ParkIdeaDto,
+  ReissueIdeaCodeDto,
+  RejectIdeaDto,
+  ScoreIdeaDto,
+  TrackIdeaDto,
   UpdateIdeaStatusDto,
 } from "./ideas.dto";
 import { CreateProductDto } from "../products/products.dto";
@@ -36,6 +42,21 @@ import { IdeasService } from "./ideas.service";
 @Controller("public/ideas")
 export class PublicIdeasController {
   constructor(private readonly ideasService: IdeasService) {}
+
+  // POST so the access code and email never end up in a URL or access log.
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post("track")
+  @HttpCode(200)
+  track(@Body() dto: TrackIdeaDto) {
+    return this.ideasService.track(dto);
+  }
+
+  @Throttle({ default: { limit: 5, ttl: 10 * 60_000 } })
+  @Post("track/reissue")
+  @HttpCode(200)
+  reissue(@Body() dto: ReissueIdeaCodeDto) {
+    return this.ideasService.reissueCode(dto.reference, dto.email);
+  }
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post()
@@ -59,8 +80,18 @@ export class IdeasController {
 
   @Get()
   @RequirePermissions(PERMISSIONS.IDEA_VIEW)
-  list(@Query() query: ListIdeasDto) {
-    return this.ideasService.list(query);
+  list(@Query() query: ListIdeasDto, @CurrentUser() user: AuthUser) {
+    return this.ideasService.list(query, user.id);
+  }
+
+  @Put(":id/score")
+  @RequirePermissions(PERMISSIONS.IDEA_REVIEW)
+  score(
+    @Param("id") id: string,
+    @Body() dto: ScoreIdeaDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    return this.ideasService.score(id, dto, user);
   }
 
   @Get(":id/attachments/:attachmentId")
@@ -109,6 +140,27 @@ export class IdeasController {
     @CurrentUser() user: AuthUser,
   ) {
     return this.ideasService.updateStatus(id, dto, user);
+  }
+
+  @Post(":id/reject")
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.IDEA_APPROVE)
+  reject(@Param("id") id: string, @Body() dto: RejectIdeaDto, @CurrentUser() user: AuthUser) {
+    return this.ideasService.reject(id, dto, user);
+  }
+
+  @Post(":id/park")
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.IDEA_APPROVE)
+  park(@Param("id") id: string, @Body() dto: ParkIdeaDto, @CurrentUser() user: AuthUser) {
+    return this.ideasService.park(id, dto, user);
+  }
+
+  @Post(":id/reopen")
+  @HttpCode(200)
+  @RequirePermissions(PERMISSIONS.IDEA_APPROVE)
+  reopen(@Param("id") id: string, @CurrentUser() user: AuthUser) {
+    return this.ideasService.reopen(id, user);
   }
 
   @Delete(":id")

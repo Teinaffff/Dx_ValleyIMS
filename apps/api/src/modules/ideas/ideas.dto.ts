@@ -52,7 +52,7 @@ export class CreatePublicIdeaDto {
 
 export class ListIdeasDto {
   @IsOptional()
-  @IsIn(["all", "pending", "approved", "deleted"])
+  @IsIn(["all", "pending", "approved", "parked", "rejected", "deleted"])
   status?: string = "all";
 
   @IsOptional()
@@ -62,7 +62,7 @@ export class ListIdeasDto {
   q?: string;
 
   @IsOptional()
-  @IsIn(["newest", "oldest"])
+  @IsIn(["newest", "oldest", "score"])
   sort?: string = "newest";
 
   @IsOptional()
@@ -96,4 +96,76 @@ export class DeleteIdeaDto {
   @IsString()
   @MaxLength(500)
   reason?: string;
+}
+
+export class ScoreIdeaDto {
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  impact!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  feasibility!: number;
+
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(5)
+  strategicFit!: number;
+
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(500)
+  comment?: string;
+}
+
+export class TrackIdeaDto {
+  @IsString()
+  @Length(4, 16)
+  reference!: string;
+
+  // New ideas are tracked with the access code issued at submission.
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @Length(4, 32)
+  accessCode?: string;
+
+  // Only ideas submitted before access codes existed fall back to the email.
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsEmail()
+  @MaxLength(160)
+  email?: string;
+}
+
+export class ReissueIdeaCodeDto {
+  @IsString()
+  @Length(4, 16)
+  reference!: string;
+
+  @IsEmail()
+  @MaxLength(160)
+  email!: string;
+}
+
+export class RejectIdeaDto {
+  // A rejection is a decision, so it always carries a written reason. The
+  // reason stays internal; the submitter only gets a neutral message.
+  @IsString()
+  @Length(3, 500)
+  reason!: string;
+}
+
+export class ParkIdeaDto {
+  @IsOptional()
+  @Transform(emptyToUndefined)
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

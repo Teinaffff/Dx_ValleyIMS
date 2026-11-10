@@ -17,6 +17,7 @@ import {
   stageLabel,
 } from "@ims/shared";
 import { PrismaService } from "../../common/prisma.service";
+import { peerBlockReason } from "../evaluators/peer-authority";
 import { AuditService } from "../audit/audit.service";
 import { AuthUser } from "../../common/auth-user";
 import { SubmitGateDto, GateDecisionDto } from "./gates.dto";
@@ -51,11 +52,11 @@ export class GatesService {
 
   async state(productId: string, user: AuthUser): Promise<GateSubmissionState> {
     const product = await this.loadProduct(productId);
-    this.assertViewAccess(product.ownerId, user);
+    await this.assertViewAccess(product.ownerId, user, product.id);
 
     const [policy, candidates, pendingRequest, latestRequest] = await Promise.all([
       this.readPolicy(),
-      this.approverCandidates(),
+      this.approverCandidates(product),
       this.prisma.stageGateRequest.findFirst({
         where: { productId, status: "PENDING_APPROVAL" },
         include: gateInclude,
@@ -125,7 +126,7 @@ export class GatesService {
       );
     }
 
-    const candidates = await this.approverCandidates();
+    const candidates = await this.approverCandidates(product);
     const needed = gateApprovalsNeeded(target, policy.earlyCount, policy.lateCount);
     const eligible = candidates.filter(
       (candidate) =>
@@ -262,6 +263,31 @@ export class GatesService {
 
     // Administrators have full override: they may decide any pending gate,
     // including one they submitted, and their vote counts toward the quorum.
+    // Peer evaluators (qualified employees) are held to their authorization:
+    // active and unexpired, covers this stage, assigned to this product, no
+    // involvement in the project, and the gate's evidence still complete.
+    let peerBasis: { specializations: string[]; stages: string[] } | null = null;
+    if (user.role === "PEER_EVALUATOR") {
+      const block = await peerBlockReason(this.prisma, user, product);
+      if (block) throw new ForbiddenException(block);
+      const unmet = this.buildChecks(product, target, false).filter((check) => !check.met);
+      if (unmet.length) {
+        throw new ForbiddenException(
+          `The required stage-gate evidence is not complete: ${unmet
+            .map((check) => check.label)
+            .join("; ")}.`,
+        );
+      }
+      const profile = await this.prisma.evaluatorApplicant.findUnique({
+        where: { userId: user.id },
+        select: { specializations: true, stages: true },
+      });
+      peerBasis = {
+        specializations: profile?.specializations ?? [],
+        stages: profile?.stages ?? [],
+      };
+    }
+
     // Any other evaluator holding gate.decide may also decide (the route is
     // permission-guarded); they are held to separation of duties only.
     if (!isAdmin) {
@@ -487,6 +513,8 @@ export class GatesService {
         productName: product.name,
         requestId: request.id,
         comment,
+        decidedAs: peerBasis ? "peer_evaluator" : isAdmin ? "administrator" : "evaluator",
+        ...(peerBasis ? { authorization: peerBasis } : {}),
       },
     });
 
@@ -675,8 +703,13 @@ export class GatesService {
     };
   }
 
-  private async approverCandidates() {
-    return this.prisma.user.findMany({
+  /**
+   * Everyone who may decide this product's gate: administrators and evaluators
+   * with gate.decide, plus peer evaluators who are authorized for this stage,
+   * assigned to this product and not involved in it.
+   */
+  private async approverCandidates(product: { id: string; stage: string; ownerId: string }) {
+    const users = await this.prisma.user.findMany({
       where: {
         isActive: true,
         deletedAt: null,
@@ -686,9 +719,28 @@ export class GatesService {
           },
         },
       },
-      select: { id: true, name: true, email: true, avatarUrl: true },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        avatarUrl: true,
+        role: { select: { code: true } },
+      },
       orderBy: { name: "asc" },
     });
+    const candidates: { id: string; name: string; email: string; avatarUrl: string | null }[] = [];
+    for (const user of users) {
+      if (user.role.code === "PEER_EVALUATOR") {
+        if (await peerBlockReason(this.prisma, user, product)) continue;
+      }
+      candidates.push({
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        avatarUrl: user.avatarUrl,
+      });
+    }
+    return candidates;
   }
 
   private mapSummary(request: GateWithPeople): GateRequestSummary {
@@ -740,14 +792,19 @@ export class GatesService {
     };
   }
 
-  private assertViewAccess(ownerId: string, user: AuthUser) {
+  private async assertViewAccess(ownerId: string, user: AuthUser, productId: string) {
     if (
       user.role === "ADMIN" ||
       user.permissions.includes(PERMISSIONS.PRODUCT_VIEW_ALL) ||
-      (user.permissions.includes(PERMISSIONS.PRODUCT_VIEW_OWN) &&
-        ownerId === user.id)
+      (user.permissions.includes(PERMISSIONS.PRODUCT_VIEW_OWN) && ownerId === user.id)
     ) {
       return;
+    }
+    if (user.role === "PEER_EVALUATOR") {
+      const assigned = await this.prisma.productEvaluator.findUnique({
+        where: { productId_userId: { productId, userId: user.id } },
+      });
+      if (assigned) return;
     }
     throw new ForbiddenException("You do not have permission to view this product");
   }

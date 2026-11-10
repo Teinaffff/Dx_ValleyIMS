@@ -64,6 +64,7 @@ enum IdeaStatus {
   CONVERTED
   APPROVED
   DELETED
+  PARKED
 }
 
 enum ProductStatus {
@@ -95,48 +96,54 @@ enum ChallengeSubmissionStatus {
 enum RoleCode {
   ADMIN
   EVALUATOR
+  PEER_EVALUATOR
   PRODUCT_OWNER
   DEVELOPER
 }
 
 model User {
-  id           String    @id @default(cuid())
+  id           String     @id @default(cuid())
   name         String
-  email        String    @unique
+  email        String     @unique
   passwordHash String
   title        String?
   avatarUrl    String?
-  isActive     Boolean   @default(true)
+  isActive     Boolean    @default(true)
   lastLoginAt  DateTime?
   roleId       String
-  role         Role      @relation(fields: [roleId], references: [id])
+  role         Role       @relation(fields: [roleId], references: [id])
   teams        UserTeam[]
-  teamsLed     Team[]    @relation("TeamLead")
+  teamsLed     Team[]     @relation("TeamLead")
 
-  productsOwned     Product[]  @relation("ProductOwner")
-  productsCreated   Product[]  @relation("ProductCreator")
-  productMemberships ProductMember[]
-  membersAdded      ProductMember[] @relation("ProductMemberAdder")
-  productsStatusChanged Product[] @relation("ProductStatusChanger")
-  productEvaluations ProductEvaluator[]
-  productReviews    ProductReview[]
-  milestonesOwned   Milestone[] @relation("MilestoneOwner")
-  milestonesCompleted Milestone[] @relation("MilestoneCompleter")
-  stageHistory      StageHistory[] @relation("StageMover")
-  gateRequests      StageGateRequest[] @relation("GateSubmitter")
-  gateApprovers     StageGateApprover[] @relation("GateApproverUser")
-  gateDecisions     StageGateDecision[] @relation("GateDecisionUser")
-  ideasSubmitted    Idea[] @relation("IdeaSubmitter")
-  ideasAssigned     Idea[] @relation("IdeaEvaluator")
-  ideasApproved     Idea[] @relation("IdeaApprover")
-  ideasDeleted      Idea[] @relation("IdeaDeleter")
-  productUpdates    ProductUpdate[]
-  followers         ProductFollower[]
-  notifications     Notification[]
-  auditLogs         AuditLog[] @relation("AuditActor")
-  templatesCreated  StageTemplate[] @relation("TemplateCreator")
-  settingsUpdated   SystemSetting[] @relation("SettingUpdater")
-  challengeSubmissions ChallengeSubmission[]
+  productsOwned         Product[]             @relation("ProductOwner")
+  productsCreated       Product[]             @relation("ProductCreator")
+  productMemberships    ProductMember[]
+  membersAdded          ProductMember[]       @relation("ProductMemberAdder")
+  productsStatusChanged Product[]             @relation("ProductStatusChanger")
+  productEvaluations    ProductEvaluator[]
+  productReviews        ProductReview[]
+  milestonesOwned       Milestone[]           @relation("MilestoneOwner")
+  milestonesCompleted   Milestone[]           @relation("MilestoneCompleter")
+  stageHistory          StageHistory[]        @relation("StageMover")
+  gateRequests          StageGateRequest[]    @relation("GateSubmitter")
+  gateApprovers         StageGateApprover[]   @relation("GateApproverUser")
+  gateDecisions         StageGateDecision[]   @relation("GateDecisionUser")
+  ideasSubmitted        Idea[]                @relation("IdeaSubmitter")
+  ideasAssigned         Idea[]                @relation("IdeaEvaluator")
+  ideasApproved         Idea[]                @relation("IdeaApprover")
+  ideasDeleted          Idea[]                @relation("IdeaDeleter")
+  productUpdates        ProductUpdate[]
+  followers             ProductFollower[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]            @relation("AuditActor")
+  templatesCreated      StageTemplate[]       @relation("TemplateCreator")
+  settingsUpdated       SystemSetting[]       @relation("SettingUpdater")
+  challengeSubmissions  ChallengeSubmission[]
+  evaluatorProfile      EvaluatorApplicant?   @relation("EvaluatorAccount")
+  evaluatorDecisions    EvaluatorApplicant[]  @relation("EvaluatorDecider")
+  evaluatorEvents       EvaluatorEvent[]      @relation("EvaluatorEventActor")
+  ideaScores            IdeaScore[]
+  ideasStatusChanged    Idea[]                @relation("IdeaStatusChanger")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
@@ -175,18 +182,18 @@ model RolePermission {
 }
 
 model Team {
-  id          String    @id @default(cuid())
-  name        String    @unique
-  description String?
-  leadId      String?
-  lead        User?    @relation("TeamLead", fields: [leadId], references: [id])
-  isArchived  Boolean   @default(false)
-  members     UserTeam[]
-  products    Product[]
-  productTeams ProductTeam[]
+  id              String                  @id @default(cuid())
+  name            String                  @unique
+  description     String?
+  leadId          String?
+  lead            User?                   @relation("TeamLead", fields: [leadId], references: [id])
+  isArchived      Boolean                 @default(false)
+  members         UserTeam[]
+  products        Product[]
+  productTeams    ProductTeam[]
   visibleProducts ProductVisibilityTeam[]
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
 
   @@index([isArchived])
 }
@@ -195,55 +202,55 @@ model UserTeam {
   userId String
   teamId String
   isLead Boolean @default(false)
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team   Team    @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@id([userId, teamId])
   @@index([teamId])
 }
 
 model Product {
-  id              String            @id @default(cuid())
-  name            String            @unique
-  slug            String            @unique
-  description     String
-  ownerId         String
-  owner           User              @relation("ProductOwner", fields: [ownerId], references: [id])
-  teamId          String?
-  team            Team?             @relation(fields: [teamId], references: [id])
-  stage           LifecycleStage    @default(IDEATION)
-  status          ProductStatus     @default(ACTIVE)
-  statusReason    String?
+  id                String                  @id @default(cuid())
+  name              String                  @unique
+  slug              String                  @unique
+  description       String
+  ownerId           String
+  owner             User                    @relation("ProductOwner", fields: [ownerId], references: [id])
+  teamId            String?
+  team              Team?                   @relation(fields: [teamId], references: [id])
+  stage             LifecycleStage          @default(IDEATION)
+  status            ProductStatus           @default(ACTIVE)
+  statusReason      String?
   statusChangedById String?
-  statusChangedBy User?             @relation("ProductStatusChanger", fields: [statusChangedById], references: [id])
-  statusChangedAt DateTime?
-  reviewCadence   ReviewCadence?
-  nextReviewDate  DateTime?
-  lastReviewedAt  DateTime?
-  health          ProductHealth     @default(ON_TRACK)
-  visibility      ProductVisibility @default(EVERYONE)
-  businessArea    String?
-  targetUsers     String?
-  expectedImpact  String?
-  launchTarget    DateTime?
-  isArchived      Boolean           @default(false)
-  archivedAt      DateTime?
-  createdById     String?
-  createdBy       User?             @relation("ProductCreator", fields: [createdById], references: [id])
-  ideaId          String?           @unique
-  idea            Idea?             @relation(fields: [ideaId], references: [id])
-  milestones      Milestone[]
-  visibilityTeams ProductVisibilityTeam[]
-  teams           ProductTeam[]
-  members         ProductMember[]
-  evaluators      ProductEvaluator[]
-  reviews         ProductReview[]
-  stageHistory    StageHistory[]
-  gateRequests    StageGateRequest[]
-  updates         ProductUpdate[]
-  followers       ProductFollower[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  statusChangedBy   User?                   @relation("ProductStatusChanger", fields: [statusChangedById], references: [id])
+  statusChangedAt   DateTime?
+  reviewCadence     ReviewCadence?
+  nextReviewDate    DateTime?
+  lastReviewedAt    DateTime?
+  health            ProductHealth           @default(ON_TRACK)
+  visibility        ProductVisibility       @default(EVERYONE)
+  businessArea      String?
+  targetUsers       String?
+  expectedImpact    String?
+  launchTarget      DateTime?
+  isArchived        Boolean                 @default(false)
+  archivedAt        DateTime?
+  createdById       String?
+  createdBy         User?                   @relation("ProductCreator", fields: [createdById], references: [id])
+  ideaId            String?                 @unique
+  idea              Idea?                   @relation(fields: [ideaId], references: [id])
+  milestones        Milestone[]
+  visibilityTeams   ProductVisibilityTeam[]
+  teams             ProductTeam[]
+  members           ProductMember[]
+  evaluators        ProductEvaluator[]
+  reviews           ProductReview[]
+  stageHistory      StageHistory[]
+  gateRequests      StageGateRequest[]
+  updates           ProductUpdate[]
+  followers         ProductFollower[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
 
   @@index([stage])
   @@index([status])
@@ -257,8 +264,8 @@ model Product {
 model ProductEvaluator {
   productId String
   userId    String
-  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
   @@id([productId, userId])
@@ -266,14 +273,14 @@ model ProductEvaluator {
 }
 
 model ProductReview {
-  id          String   @id @default(cuid())
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  reviewerId  String
-  reviewer    User     @relation(fields: [reviewerId], references: [id])
-  notes       String
-  metrics     Json?
-  createdAt   DateTime @default(now())
+  id         String   @id @default(cuid())
+  productId  String
+  product    Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  reviewerId String
+  reviewer   User     @relation(fields: [reviewerId], references: [id])
+  notes      String
+  metrics    Json?
+  createdAt  DateTime @default(now())
 
   @@index([productId, createdAt])
   @@index([reviewerId])
@@ -300,13 +307,13 @@ model ProductTeam {
 }
 
 model ProductMember {
-  productId  String
-  userId     String
-  addedById  String?
-  addedAt    DateTime @default(now())
-  product    Product @relation(fields: [productId], references: [id], onDelete: Cascade)
-  user       User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  addedBy    User?   @relation("ProductMemberAdder", fields: [addedById], references: [id])
+  productId String
+  userId    String
+  addedById String?
+  addedAt   DateTime @default(now())
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  addedBy   User?    @relation("ProductMemberAdder", fields: [addedById], references: [id])
 
   @@id([productId, userId])
   @@index([userId])
@@ -381,36 +388,36 @@ model StageTemplate {
 }
 
 model StageGateRequest {
-  id              String         @id @default(cuid())
-  productId       String
-  product         Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
-  fromStage       LifecycleStage
-  toStage         LifecycleStage
-  status          GateStatus     @default(DRAFT)
-  submittedById   String
-  submittedBy     User           @relation("GateSubmitter", fields: [submittedById], references: [id])
-  submittedAt     DateTime       @default(now())
-  policy          Json
-  note            String?
-  snapshot        Json?
-  resolutionNote  String?
-  round           Int            @default(1)
-  decidedAt       DateTime?
-  approvers       StageGateApprover[]
-  decisions       StageGateDecision[]
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
+  id             String              @id @default(cuid())
+  productId      String
+  product        Product             @relation(fields: [productId], references: [id], onDelete: Cascade)
+  fromStage      LifecycleStage
+  toStage        LifecycleStage
+  status         GateStatus          @default(DRAFT)
+  submittedById  String
+  submittedBy    User                @relation("GateSubmitter", fields: [submittedById], references: [id])
+  submittedAt    DateTime            @default(now())
+  policy         Json
+  note           String?
+  snapshot       Json?
+  resolutionNote String?
+  round          Int                 @default(1)
+  decidedAt      DateTime?
+  approvers      StageGateApprover[]
+  decisions      StageGateDecision[]
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   @@index([productId, status])
   @@index([status])
 }
 
 model StageGateApprover {
-  id        String        @id @default(cuid())
+  id        String           @id @default(cuid())
   requestId String
   request   StageGateRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   userId    String
-  user      User          @relation("GateApproverUser", fields: [userId], references: [id])
+  user      User             @relation("GateApproverUser", fields: [userId], references: [id])
   decision  GateDecision?
   comment   String?
   decidedAt DateTime?
@@ -420,46 +427,53 @@ model StageGateApprover {
 }
 
 model StageGateDecision {
-  id         String         @id @default(cuid())
+  id         String           @id @default(cuid())
   requestId  String
   request    StageGateRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
   approverId String
-  approver   User           @relation("GateDecisionUser", fields: [approverId], references: [id])
+  approver   User             @relation("GateDecisionUser", fields: [approverId], references: [id])
   decision   GateDecision
   comment    String?
-  createdAt  DateTime       @default(now())
+  createdAt  DateTime         @default(now())
 
   @@index([requestId])
 }
 
 model Idea {
-  id                 String     @id @default(cuid())
-  title              String
-  problem            String
-  solution           String
-  expectedImpact     String?
-  status             IdeaStatus @default(SUBMITTED)
-  submittedById      String?
-  submittedBy        User?      @relation("IdeaSubmitter", fields: [submittedById], references: [id])
-  submitterName      String?
-  submitterEmail     String?
-  submitterTitle     String?
+  id                  String           @id @default(cuid())
+  title               String
+  problem             String
+  solution            String
+  expectedImpact      String?
+  status              IdeaStatus       @default(SUBMITTED)
+  submittedById       String?
+  submittedBy         User?            @relation("IdeaSubmitter", fields: [submittedById], references: [id])
+  submitterName       String?
+  submitterEmail      String?
+  // Hash of the access code given to the submitter; needed to track the idea.
+  trackingHash        String?
+  submitterTitle      String?
   assignedEvaluatorId String?
-  assignedEvaluator  User?      @relation("IdeaEvaluator", fields: [assignedEvaluatorId], references: [id])
-  approvedById       String?
-  approvedBy         User?      @relation("IdeaApprover", fields: [approvedById], references: [id])
-  approvedAt         DateTime?
-  deletedById        String?
-  deletedBy          User?      @relation("IdeaDeleter", fields: [deletedById], references: [id])
-  deletedAt          DateTime?
-  deleteReason       String?
-  reviewNote         String?
-  internalNotes      String?
-  clarificationNote  String?
-  convertedProduct   Product?
-  attachments        IdeaAttachment[]
-  createdAt          DateTime   @default(now())
-  updatedAt          DateTime   @updatedAt
+  assignedEvaluator   User?            @relation("IdeaEvaluator", fields: [assignedEvaluatorId], references: [id])
+  approvedById        String?
+  approvedBy          User?            @relation("IdeaApprover", fields: [approvedById], references: [id])
+  approvedAt          DateTime?
+  // Who last rejected or parked the idea, and when (approvals use approvedBy).
+  statusChangedById   String?
+  statusChangedBy     User?            @relation("IdeaStatusChanger", fields: [statusChangedById], references: [id])
+  statusChangedAt     DateTime?
+  deletedById         String?
+  deletedBy           User?            @relation("IdeaDeleter", fields: [deletedById], references: [id])
+  deletedAt           DateTime?
+  deleteReason        String?
+  reviewNote          String?
+  internalNotes       String?
+  clarificationNote   String?
+  convertedProduct    Product?
+  attachments         IdeaAttachment[]
+  scores              IdeaScore[]
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   @@index([status])
   @@index([submittedById])
@@ -551,18 +565,23 @@ model ProductFollower {
 }
 
 model Notification {
-  id        String    @id @default(cuid())
-  userId    String
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  type      String
-  title     String
-  body      String
-  link      String?
-  readAt    DateTime?
-  createdAt DateTime  @default(now())
+  id            String    @id @default(cuid())
+  userId        String
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type          String
+  title         String
+  body          String
+  link          String?
+  readAt        DateTime?
+  // Email outbox: set once emailed (or claimed for sending); a background
+  // sender picks up rows where this is still null.
+  emailedAt     DateTime?
+  emailAttempts Int       @default(0)
+  createdAt     DateTime  @default(now())
 
   @@index([userId, readAt])
   @@index([createdAt])
+  @@index([emailedAt, createdAt])
 }
 
 model AuditLog {
@@ -590,4 +609,138 @@ model SystemSetting {
   updatedById String?
   updatedBy   User?    @relation("SettingUpdater", fields: [updatedById], references: [id])
   updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------------
+// Competency-based evaluator qualification
+// ---------------------------------------------------------------------------
+
+enum Competency {
+  INNOVATION_FUNDAMENTALS
+  STRATEGIC_THINKING
+  CRITICAL_THINKING
+  RISK_MANAGEMENT
+  EVALUATION_ETHICS
+  PRODUCT_BUSINESS
+}
+
+enum Specialization {
+  INNOVATION_MANAGEMENT
+  BUSINESS_STRATEGY
+  TECHNOLOGY
+  FINANCE
+  RISK_COMPLIANCE
+  CUSTOMER_EXPERIENCE
+}
+
+enum EvaluatorStatus {
+  CANDIDATE
+  QUALIFIED
+  AUTHORIZED
+  REJECTED
+  SUSPENDED
+  REVOKED
+}
+
+enum AttemptStatus {
+  IN_PROGRESS
+  SUBMITTED
+  EXPIRED
+}
+
+// Multiple-choice bank managed by administrators. Each attempt draws a random
+// subset and shuffles the options; the correct answer never leaves the server.
+model AssessmentQuestion {
+  id           String     @id @default(cuid())
+  competency   Competency
+  prompt       String
+  options      String[]
+  correctIndex Int
+  explanation  String?
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([competency, isActive])
+}
+
+// A staff member who applied. No portal account is needed to apply; one is
+// created (role PEER_EVALUATOR) only when an administrator authorizes them.
+model EvaluatorApplicant {
+  id              String              @id @default(cuid())
+  name            String
+  email           String              @unique
+  jobTitle        String?
+  department      String?
+  motivation      String?
+  tokenHash       String
+  status          EvaluatorStatus     @default(CANDIDATE)
+  specializations Specialization[]
+  stages          LifecycleStage[]
+  validUntil      DateTime?
+  decisionNote    String?
+  decidedById     String?
+  decidedBy       User?               @relation("EvaluatorDecider", fields: [decidedById], references: [id])
+  decidedAt       DateTime?
+  userId          String?             @unique
+  user            User?               @relation("EvaluatorAccount", fields: [userId], references: [id])
+  attempts        AssessmentAttempt[]
+  events          EvaluatorEvent[]
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([status])
+}
+
+model AssessmentAttempt {
+  id          String             @id @default(cuid())
+  applicantId String
+  applicant   EvaluatorApplicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  status      AttemptStatus      @default(IN_PROGRESS)
+  // Snapshot of the drawn questions with shuffled options and the correct
+  // index, so editing the bank later never changes a past attempt.
+  questions   Json
+  answers     Json               @default("{}")
+  startedAt   DateTime           @default(now())
+  expiresAt   DateTime
+  submittedAt DateTime?
+  score       Float?
+  passed      Boolean?
+  breakdown   Json?
+
+  @@index([applicantId])
+}
+
+// Append-only history of applications, authorizations and changes.
+model EvaluatorEvent {
+  id          String             @id @default(cuid())
+  applicantId String
+  applicant   EvaluatorApplicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  action      String
+  actorId     String?
+  actor       User?              @relation("EvaluatorEventActor", fields: [actorId], references: [id])
+  note        String?
+  metadata    Json?
+  createdAt   DateTime           @default(now())
+
+  @@index([applicantId, createdAt])
+}
+
+// One evaluator's rubric score for one idea (each dimension 1-5). Evaluators
+// can revise their own score; the inbox ranks ideas by the average.
+model IdeaScore {
+  id           String   @id @default(cuid())
+  ideaId       String
+  idea         Idea     @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  evaluatorId  String
+  evaluator    User     @relation(fields: [evaluatorId], references: [id], onDelete: Cascade)
+  impact       Int
+  feasibility  Int
+  strategicFit Int
+  comment      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([ideaId, evaluatorId])
+  @@index([ideaId])
 }

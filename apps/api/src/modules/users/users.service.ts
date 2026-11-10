@@ -70,6 +70,12 @@ export class UsersService {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new ConflictException("A user with that email already exists");
 
+    if (dto.role === "PEER_EVALUATOR") {
+      throw new BadRequestException(
+        "Peer evaluator accounts are created from Evaluator management once someone qualifies.",
+      );
+    }
+
     const role = await this.prisma.role.findUnique({ where: { code: dto.role } });
     if (!role) throw new BadRequestException("Choose a valid role");
 
@@ -130,6 +136,16 @@ export class UsersService {
 
     if (dto.isActive === false && id === actor.id) {
       throw new BadRequestException("You cannot deactivate your own account");
+    }
+
+    if (
+      dto.role &&
+      dto.role !== existing.role.code &&
+      (dto.role === "PEER_EVALUATOR" || existing.role.code === "PEER_EVALUATOR")
+    ) {
+      throw new BadRequestException(
+        "Change a peer evaluator's access from Evaluator management, not the user form.",
+      );
     }
 
     if (dto.role && dto.role !== existing.role.code && id === actor.id) {

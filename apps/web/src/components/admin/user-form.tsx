@@ -31,6 +31,8 @@ import {
 const ROLE_DESCRIPTIONS: Record<RoleCode, string> = {
   ADMIN: "Full governance access, every product and system configuration.",
   EVALUATOR: "Reviews assigned stage gates and leaves independent decisions.",
+  PEER_EVALUATOR:
+    "Qualified employee authorized for specific early-stage gates. Created from Evaluator management.",
   PRODUCT_OWNER: "Owns products, milestones and stage-gate submissions.",
   DEVELOPER:
     "Recorded for rostering and milestone ownership. No portal sign-in; a team assignment is enough.",
@@ -129,7 +131,7 @@ function CreateUserForm({
 
         <Field label="Role" error={form.formState.errors.role?.message}>
           <Select {...form.register("role")}>
-            {ROLE_CODES.map((code) => (
+            {ROLE_CODES.filter((code) => code !== "PEER_EVALUATOR").map((code) => (
               <option key={code} value={code}>
                 {ROLE_LABELS[code]}
               </option>

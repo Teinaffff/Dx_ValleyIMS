@@ -4,7 +4,7 @@ import * as React from "react";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { CheckCircle2, Loader2, Send } from "lucide-react";
+import { CheckCircle2, Copy, KeyRound, Loader2, Send } from "lucide-react";
 import {
   publicIdeaCreateSchema,
   type PublicIdeaCreateInput,
@@ -18,6 +18,8 @@ export function PublicIdeaForm() {
   const [submitting, setSubmitting] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [reference, setReference] = React.useState<string | null>(null);
+  const [accessCode, setAccessCode] = React.useState<string | null>(null);
+  const [copied, setCopied] = React.useState(false);
   const [files, setFiles] = React.useState<File[]>([]);
 
   const form = useForm<PublicIdeaCreateInput>({
@@ -58,11 +60,21 @@ export function PublicIdeaForm() {
       }
       for (const file of files) body.append("files", file, file.name);
 
-      const result = await apiFetch<{ reference: string }>("/api/public/ideas", {
-        method: "POST",
-        body,
-      });
+      const result = await apiFetch<{ reference: string; accessCode: string }>(
+        "/api/public/ideas",
+        { method: "POST", body },
+      );
       setReference(result.reference);
+      setAccessCode(result.accessCode);
+      try {
+        // Lets the tracking page on this device fill the details in for them.
+        window.localStorage.setItem(
+          "ims.idea.last",
+          JSON.stringify({ reference: result.reference, code: result.accessCode }),
+        );
+      } catch {
+        // Private mode: they still have the code on screen.
+      }
       form.reset();
       setFiles([]);
     } catch (requestError) {
@@ -92,8 +104,51 @@ export function PublicIdeaForm() {
         <p className="mt-4 rounded-full bg-canvas px-3.5 py-2 font-mono text-[11px] font-semibold tracking-[0.12em] text-ink/70">
           REFERENCE · {reference}
         </p>
+        {accessCode ? (
+          <div className="mt-4 w-full rounded-[22px] border border-warning/30 bg-warning/[0.07] p-4">
+            <p className="flex items-center gap-2 text-[12px] font-semibold text-[#9A6206]">
+              <KeyRound className="h-3.5 w-3.5" /> Save your access code
+            </p>
+            <p className="mt-1 text-[11px] leading-relaxed text-ink/70">
+              You need the reference and this code to check where your idea stands. It is shown
+              only once; if you lose it you can ask for a new one by email.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <code className="rounded-xl bg-surface px-3 py-2 font-mono text-[15px] font-semibold tracking-[0.12em]">
+                {accessCode}
+              </code>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(accessCode);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 1800);
+                  } catch {
+                    // visible on screen anyway
+                  }
+                }}
+              >
+                <Copy className="h-3.5 w-3.5" /> {copied ? "Copied" : "Copy"}
+              </Button>
+            </div>
+          </div>
+        ) : null}
         <div className="mt-6 flex w-full flex-col gap-2 sm:flex-row">
-          <Button type="button" variant="outline" size="md" onClick={() => setReference(null)}>
+          <Button asChild size="md">
+            <Link href={`/track-idea?ref=${reference}`}>Track this idea</Link>
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="md"
+            onClick={() => {
+              setReference(null);
+              setAccessCode(null);
+            }}
+          >
             Share another idea
           </Button>
           <Button asChild variant="ghost" size="md">
@@ -108,7 +163,7 @@ export function PublicIdeaForm() {
     <div>
       <p className="label-caps">Share an idea</p>
       <h2 className="mt-2 font-display text-2xl font-semibold tracking-tight">
-        No account needed.
+        Give us what you've got.
       </h2>
       <p className="mt-2 text-[13px] leading-relaxed text-muted">
         Tell us what you have noticed and what could change. Your note goes straight to the
